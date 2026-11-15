@@ -1,6 +1,6 @@
 # ADR 0052 — Le runner REST est choisi par le point d'accès, pas par la plateforme du document
 
-Date : 2026-11-07 · Statut : **proposée** (branche points d'accès REST, plan 0036)
+Date : 2026-11-07 · Statut : **acceptée** le 15 novembre 2026 (branche points d'accès REST, plan 0036)
 
 ## Contexte
 

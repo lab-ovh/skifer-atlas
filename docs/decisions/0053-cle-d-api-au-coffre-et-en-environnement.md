@@ -1,6 +1,6 @@
 # ADR 0053 — Clé d'API : le coffre d'abord, l'environnement quand il n'y a pas de trousseau
 
-Date : 2026-11-07 · Statut : **proposée** (branche points d'accès REST, plan 0036)
+Date : 2026-11-07 · Statut : **acceptée** le 15 novembre 2026 (branche points d'accès REST, plan 0036)
 
 ## Contexte
 

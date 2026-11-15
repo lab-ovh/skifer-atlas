@@ -1,6 +1,6 @@
 # ADR 0051 — Jeux de données REST dans un fichier d'espace de travail
 
-Date : 2026-11-07 · Statut : **proposée** (branche points d'accès REST, plan 0036)
+Date : 2026-11-07 · Statut : **acceptée** le 15 novembre 2026 (branche points d'accès REST, plan 0036)
 
 ## Contexte
 

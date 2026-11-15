@@ -1,6 +1,6 @@
 # ADR 0050 — Points d'accès REST : une plateforme propre aux points d'accès
 
-Date : 2026-11-07 · Statut : **proposée** (branche points d'accès REST, plan 0036)
+Date : 2026-11-07 · Statut : **acceptée** le 15 novembre 2026 (branche points d'accès REST, plan 0036)
 
 ## Contexte
 
