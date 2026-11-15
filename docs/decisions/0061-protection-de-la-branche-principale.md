@@ -18,7 +18,8 @@ jusqu'ici appliquée à la main.
 - branche à jour avec `main` avant fusion (mode strict) ;
 - règle appliquée aussi aux administrateurs ; ni force push ni suppression de `main`.
 
-`core Windows (informatif)` reste non bloquant. Les builds de `release.yml` (macOS arm64,
+`core Windows (informatif)` reste non bloquant ; l'ADR 0064 l'a depuis rendu obligatoire,
+sous le nom `core (windows-latest)`. Les builds de `release.yml` (macOS arm64,
 macOS x64, Windows x64 et test de fumée) ne sont pas obligatoires : ils ne se déclenchent
 que si `core/`, `app/` ou `scripts/` changent, et une PR de documentation seule resterait
 bloquée faute de les recevoir. Ils restent à surveiller avant fusion quand ils tournent.
@@ -30,4 +31,4 @@ Aucune revue n'est exigée : le dépôt n'a qu'un mainteneur.
 Une PR rouge, ou testée sur un `main` dépassé, ne peut plus être fusionnée. Après chaque
 fusion, les autres PR doivent être mises à jour avec `main` et repasser la CI. Rendre
 bloquants les builds de `release.yml` demanderait un job toujours déclenché qui les résume ;
-rendre bloquant `core Windows` est une décision à part.
+rendre bloquant `core Windows` est une décision à part (ADR 0064).
