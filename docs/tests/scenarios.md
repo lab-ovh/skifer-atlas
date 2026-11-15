@@ -43,7 +43,7 @@ La CI [tests.yml](../../.github/workflows/tests.yml) lance les trois niveaux (co
 | 0017 | 13 | 13 | 0 | 0 | 0 |
 | 0018 | 7 | 2 | 0 | 5 | 0 |
 | 0019 | 9 | 1 | 0 | 8 | 0 |
-| 0020 | 4 | 4 | 0 | 0 | 0 |
+| 0020 | 5 | 4 | 0 | 1 | 0 |
 | 0021 | 7 | 5 | 0 | 2 | 0 |
 | 0022 | 6 | 6 | 0 | 0 | 0 |
 | 0023 | 5 | 5 | 0 | 0 | 0 |
@@ -63,7 +63,7 @@ La CI [tests.yml](../../.github/workflows/tests.yml) lance les trois niveaux (co
 | ADR 0055 | 1 | 1 | 0 | 0 | 0 |
 | ADR 0056 | 6 | 6 | 0 | 0 | 0 |
 | RAF | 11 | 7 | 0 | 4 | 0 |
-| **Total** | **341** | **271** | **6** | **64** | **0** |
+| **Total** | **342** | **271** | **6** | **65** | **0** |
 
 Lecture : « Test front e2e » compte les vérifications citées par un parcours Playwright, « Vitest seulement » celles qui n'ont qu'un test de composant. « Sans test front » regroupe les deux sections finales ; « dont testables » en est la part qui a une surface à l'écran.
 
@@ -2486,6 +2486,7 @@ Rien, à l'écran, ne montre ces vérifications : elles portent sur un compte r�
 | S-0006-06 | Une proposition invalide n'est jamais poussée | Logique serveur sans écran : l'éditeur bloque la soumission avant (S-0013-04), la route n'est pas atteinte | `core/tests/repo/test_proposals.py::test_an_invalid_proposal_is_never_pushed` |
 | S-0006-08 | Le cycle de revue passe sur un vrai dépôt GitHub | Compte réel : compte et dépôt GitHub de test, hors CI | `core/tests/repo/test_githost.py::test_github_cycle` (faux hôte), `::test_real_github_reads` (marqué `github`) |
 | S-0006-09 | Le token de l'hébergeur n'est ni dans l'URL distante, ni dans `.git/config`, ni dans les journaux | Fichiers et journaux du poste, hors du DOM | `core/tests/repo/test_githost.py::test_the_token_stays_out_of_urls_config_and_errors` ; `core/tests/repo/test_workspace_repo.py::test_remote_urls_never_carry_credentials` |
+| S-0020-05 | Sur un vrai dépôt GitHub, des fusions merge, squash et rebase faites hors d'Atlas sont taguées au bon commit au sync, et un tag supprimé du distant repart au sync suivant (recette #112) | Dépôt GitHub privé réel et jeton, hors CI | `core/tests/repo/test_recette_github.py` (marqué `github`) |
 | S-0007-03 | `nulls: keep` contre `nulls: drop` : nombres de lignes attendus | Exécution moteur ; l'éditeur compile sans exécuter | `core/tests/compile/test_compile.py::test_nulls_keep_and_drop_on_not_equals` |
 | S-0007-04 | Ratio de sommes contre moyenne de ratios : résultats attendus | Exécution moteur | `core/tests/compile/test_compile.py::test_ratio_of_sums_differs_from_average_of_ratios` |
 | S-0007-05 | Commandes du 30 septembre à 23 h UTC dans le bon mois fiscal (`Europe/Paris`) | Exécution moteur | `core/tests/compile/test_compile.py::test_fiscal_month_follows_the_paris_day` |
