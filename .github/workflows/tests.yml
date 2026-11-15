@@ -41,7 +41,8 @@ jobs:
       - name: Pytest et couverture
         run: |
           set -o pipefail
-          uv run pytest -q --cov=skifer_atlas --cov-report=term-missing:skip-covered | tee pytest-report.txt
+          # Seuil sous la couverture mesurée (95 %) : une baisse nette bloque la PR (ADR 0062).
+          uv run pytest -q --cov=skifer_atlas --cov-report=term-missing:skip-covered --cov-fail-under=94 | tee pytest-report.txt
       - name: Résumé de couverture
         if: always()
         run: |
