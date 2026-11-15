@@ -15,6 +15,7 @@ La CI échoue sous ces seuils :
 
 - Python : 94 % des instructions (`--cov-fail-under=94`), sur `core (ubuntu-latest)` et
   `core (macos-15)`. La suite Windows reste informative et sans seuil.
+  Depuis l'ADR 0064, elle est bloquante et soumise au même seuil.
 - front : 98 % des lignes et des instructions, 95 % des fonctions, 91 % des branches
   (`coverage.thresholds` dans `app/vite.config.ts`, appliqués par `vitest run --coverage`).
 
