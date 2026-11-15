@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { ALTAVIA, fakeServer, workspace } from "./test/fakeServer";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 const FAST = { attempts: 2, delayMs: 1 };
 
@@ -25,6 +25,34 @@ function nordisServer(proposals: unknown[] = [{ id: 1 }, { id: 2 }, { id: 3 }]) 
 }
 
 describe("démarrage et serveur injoignable", () => {
+  it.each([false, true])("[S-0010-12] attend la fin de la sonde initiale (succès au cinquième essai : %s)", async (succeeds) => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    fakeServer(({ path }) => {
+      if (path === "/health") {
+        attempts += 1;
+        return succeeds && attempts === 5 ? { json: { status: "ok", version: "0.0.1" } } : "down";
+      }
+      if (path === "/api/workspaces") return { json: [] };
+    });
+    render(<App startup={{ attempts: 5, delayMs: 500 }} />);
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(attempt === 1 ? 0 : 500); });
+      expect(attempts).toBe(attempt);
+      expect(screen.getByText("Démarrage du serveur local…")).toBeInTheDocument();
+      expect(screen.queryByText("Serveur local injoignable")).not.toBeInTheDocument();
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(attempts).toBe(5);
+    expect(screen.queryByText("Démarrage du serveur local…")).not.toBeInTheDocument();
+    if (succeeds) {
+      expect(screen.queryByText("Serveur local injoignable")).not.toBeInTheDocument();
+      expect(screen.getByText("Vos espaces de travail")).toBeInTheDocument();
+    } else {
+      expect(screen.getByText("Serveur local injoignable")).toBeInTheDocument();
+    }
+  });
+
   it("annonce le démarrage tant que le serveur ne répond pas", async () => {
     let ready: (value: { json: unknown }) => void = () => {};
     const server = fakeServer(({ path }) => {
@@ -63,6 +91,27 @@ describe("démarrage et serveur injoignable", () => {
     server.setDown(false);
     await userEvent.click(screen.getByRole("button", { name: "Réessayer" }));
     expect(await screen.findByRole("heading", { name: "Catalogue" })).toBeInTheDocument();
+  });
+
+  it("recharge le panneau de connexions après une liste injoignable", async () => {
+    let down = true;
+    fakeServer(({ path }) => {
+      if (path === "/api/workspaces/groupe-nordis") return { json: workspace() };
+      if (path === "/api/workspaces/groupe-nordis/connections") return down ? "down" : { json: [] };
+      if (path.endsWith("/connections/platforms")) return { json: [{ id: "databricks", label: "Databricks", supported: true }] };
+      if (path.includes("proposals")) return { json: [] };
+      return undefined;
+    });
+    goTo("#/w/groupe-nordis/connexions");
+    render(<App startup={FAST} />);
+    const banner = await screen.findByRole("alert");
+    expect(banner).toHaveTextContent("Serveur local injoignable");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.queryByRole("textbox", { name: "Identifiant" })).not.toBeInTheDocument();
+    down = false;
+    await userEvent.click(within(banner).getByRole("button", { name: "Réessayer" }));
+    expect(await screen.findByRole("textbox", { name: "Identifiant" })).toHaveValue("dbx-fr");
+    expect(screen.queryByText("Serveur local injoignable")).not.toBeInTheDocument();
   });
 });
 

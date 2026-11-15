@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, UnreachableError, type Workspace } from "../api";
-import { Banner } from "../components/Banner";
+import { Banner, RetryAction } from "../components/Banner";
 import { Brand } from "../components/Brand";
 import { Icon, type IconName } from "../components/Icon";
 import { InterruptedAttachment } from "../components/InterruptedAttachment";
@@ -43,6 +43,7 @@ export function WorkspaceShell({
   onUnknown: (id: string) => void;
 }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
+  const [loadRetry, setLoadRetry] = useState(0);
   const [waiting, setWaiting] = useState(0);
   const [refresh, setRefresh] = useState<{ id: string; revision: number } | null>(null);
   const [replacement, setReplacement] = useState(0);
@@ -67,7 +68,7 @@ export function WorkspaceShell({
     return () => {
       alive = false;
     };
-  }, [wsId, onUnknown]);
+  }, [wsId, onUnknown, loadRetry]);
 
   // Les relectures conservent les composants et leurs états de saisie.
   const mountedWorkspace = useRef<string | null>(null);
@@ -99,7 +100,8 @@ export function WorkspaceShell({
         while (alive && attempts < 20 && performance.now() < deadline &&
                (result.status === "pending" || result.status === "busy")) {
           await new Promise((resolve) => window.setTimeout(resolve, 150));
-          if (!alive || performance.now() >= deadline) return;
+          if (!alive || mountedWorkspace.current !== wsId) return;
+          if (performance.now() >= deadline) break;
           attempts += 1;
           result = await api.autoSync(wsId, existingEditor);
         }
@@ -113,7 +115,10 @@ export function WorkspaceShell({
           }).catch(() => {});
         }
         if (!alive) return;
-        if (["offline", "conflict", "local", "error", "wrong_branch"].includes(result.status)) {
+        if (result.status === "pending" || result.status === "busy") {
+          failure.current = { ws: wsId, status: "gave_up" };
+          setNotice({ key: syncKey, status: "gave_up" });
+        } else if (["offline", "conflict", "local", "error", "wrong_branch"].includes(result.status)) {
           if (result.status === "local") {
             failure.current = null;
             setNotice(null);
@@ -174,9 +179,11 @@ export function WorkspaceShell({
   const ws = load.kind === "ready" ? load.ws : null;
   const conflict = explain(new ApiError(409, "sync_conflict", ""));
   const syncMessage = notice?.status === "conflict" ? conflict
+    : notice?.status === "gave_up" ? { title: "Synchronisation en attente", text: "La synchronisation n’a pas encore eu lieu. Un nouvel essai aura lieu au prochain changement d’écran." }
     : notice?.status === "wrong_branch" ? explain(new ApiError(409, "sync_wrong_branch", ""))
     : notice?.status === "error" ? explain(new ApiError(500, "sync_error", ""))
     : { title: "Dépôt momentanément inaccessible", text: "La copie locale reste disponible. Vérifiez le réseau ou l’accès au dépôt." };
+  useEffect(() => { setNotice(null); }, [syncKey]);
   const syncNotice = notice?.key === syncKey && (
     <Banner tone="info" title={syncMessage.title}>{syncMessage.text}</Banner>
   );
@@ -234,7 +241,7 @@ export function WorkspaceShell({
           </p>
         )}
         {load.kind === "error" && (
-          <Banner tone="bad" title={load.error.title}>
+          <Banner tone="bad" title={load.error.title} action={<RetryAction onRetry={() => setLoadRetry((n) => n + 1)} />}>
             {load.error.text}
           </Banner>
         )}
@@ -283,9 +290,9 @@ export function WorkspaceShell({
         </nav>
         {ws && (
           <div className="sidebar-user">
-            <span className="avatar-round">{initials(ws.account || "?")}</span>
+            <span className="avatar-round">{initials(ws.user_name || ws.account || "?")}</span>
             <span className="sidebar-user-text">
-              <span className="sidebar-user-name">{ws.account}</span>
+              <span className="sidebar-user-name">{ws.user_name || ws.account}</span>
               <span className="sidebar-user-role">{ws.role_label}</span>
             </span>
           </div>
@@ -299,7 +306,7 @@ export function WorkspaceShell({
           </p>
         )}
         {load.kind === "error" && (
-          <Banner tone="bad" title={load.error.title}>
+          <Banner tone="bad" title={load.error.title} action={<RetryAction onRetry={() => setLoadRetry((n) => n + 1)} />}>
             {load.error.text}
           </Banner>
         )}
@@ -309,7 +316,7 @@ export function WorkspaceShell({
         {ws && view === "fiche" && doc && <Fiche revision={dataRevision} ws={ws} id={doc} params={params} heading={heading} />}
         {ws && view === "propositions" && <Proposals ws={ws} params={params} heading={heading} onMerged={refreshWorkspace} />}
         {ws && view === "comparaison" && <Comparison ws={ws} params={params} heading={heading} />}
-        {ws && view === "connexions" && <Connections ws={ws} heading={heading} />}
+        {ws && view === "connexions" && <Connections key={ws.id} ws={ws} heading={heading} />}
         {ws && view === "administration" && <Administration ws={ws} heading={heading} onMerged={refreshWorkspace} onWorkspaceChange={replaceWorkspace} />}
       </main>
     </div>

@@ -5,16 +5,18 @@ import {
   MarkerType,
   MiniMap,
   Position,
+  Panel,
   ReactFlow,
   useReactFlow,
   type Connection,
   type Edge as FlowEdge,
+  type EdgeChange,
   type Node,
   type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { memo, useMemo, type DragEvent } from "react";
+import { memo, useMemo, useState, type DragEvent } from "react";
 import type { Issue } from "../api";
 import { Icon } from "../components/Icon";
 import { useStable } from "../stable";
@@ -121,6 +123,8 @@ export type CanvasProps = {
 export function Canvas(props: CanvasProps) {
   const { nodes, positions, selected, pending, output, variation, overridden, locked, issues, tool } = props;
   const flow = useReactFlow();
+  const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({});
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   const byNode = useMemo(() => {
     const found = new Map<string, Issue>();
@@ -134,6 +138,7 @@ export function Canvas(props: CanvasProps) {
     id: node.id,
     type: "card",
     position: positions[node.id] ?? { x: 0, y: 0 },
+    measured: measured[node.id],
     selected: node.id === selected,
     draggable: tool === "select",
     connectable: !locked,
@@ -156,16 +161,41 @@ export function Canvas(props: CanvasProps) {
     target: edge.target,
     targetHandle: edge.side ?? undefined,
     type: "smoothstep",
+    selected: edge.source + "-" + edge.target + "-" + (edge.side ?? "in") === selectedEdgeId,
     deletable: !locked,
     data: { side: edge.side },
     markerEnd: { type: MarkerType.ArrowClosed, color: "var(--atlas-node-source)" },
   })));
 
   const onNodesChange = (changes: NodeChange<CardNode>[]) => {
+    const dimensions = changes.filter((change) => change.type === "dimensions" && change.dimensions);
+    if (dimensions.length) {
+      setMeasured((current) => {
+        const next = { ...current };
+        for (const change of dimensions) {
+          if (change.type === "dimensions" && change.dimensions) next[change.id] = change.dimensions;
+        }
+        return next;
+      });
+    }
     for (const change of changes) {
+      if (change.type === "select" && tool !== "edge") {
+        if (change.selected) props.onSelect(change.id);
+        else if (selected === change.id) props.onSelect(null);
+      }
       if (change.type === "position" && change.position) props.onMove(change.id, change.position);
     }
   };
+
+  const onEdgesChange = (changes: EdgeChange<FlowEdge>[]) => {
+    for (const change of changes) {
+      if (change.type === "select") {
+        if (change.selected) setSelectedEdgeId(change.id);
+        else setSelectedEdgeId((current) => current === change.id ? null : current);
+      }
+    }
+  };
+  const selectedEdge = flowEdges.find((edge) => edge.id === selectedEdgeId);
 
   const onConnect = (connection: Connection) => {
     if (!connection.source || !connection.target) return;
@@ -193,6 +223,7 @@ export function Canvas(props: CanvasProps) {
         edges={flowEdges}
         nodeTypes={NODE_TYPES}
         onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={(_, node) => props.onSelect(node.id)}
         onPaneClick={() => props.onSelect(null)}
@@ -213,6 +244,14 @@ export function Canvas(props: CanvasProps) {
         fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
         proOptions={{ hideAttribution: true }}
       >
+        {selectedEdge && !locked && (
+          <Panel position="top-right" className="canvas-edge-action">
+            <button type="button" className="btn btn-neutral" onClick={() => {
+              props.onDisconnect(selectedEdge.source, selectedEdge.target, selectedEdge.data?.side as Side | undefined);
+              setSelectedEdgeId(null);
+            }}>Supprimer l'arête</button>
+          </Panel>
+        )}
         <Background variant={BackgroundVariant.Lines} gap={24} />
         <MiniMap
           pannable

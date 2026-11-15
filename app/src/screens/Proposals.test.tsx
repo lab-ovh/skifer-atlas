@@ -238,6 +238,20 @@ describe("propositions", () => {
     expect(window.location.hash).toContain("domain=tous");
   });
 
+  it("combine KPI et auteur, et conserve les choix dans l’adresse", async () => {
+    proposalServer();
+    render(<Harness />);
+    await queueList();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Domaine" }), "tous");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "KPI" }), "revenu-net");
+    expect(within(await queueList()).getAllByRole("link")).toHaveLength(2);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Auteur" }), "julien.h");
+    expect(within(await queueList()).getAllByRole("link")).toHaveLength(1);
+    expect(window.location.hash).toContain("kpi=revenu-net");
+    expect(window.location.hash).toContain("author=julien.h");
+    expect(within(await queueList()).getByText("Revenu net · canonique v5")).toBeInTheDocument();
+  });
+
   it("filtre d'entité : le canonique seul", async () => {
     window.location.hash = "#/w/groupe-nordis/propositions?domain=tous&entity=canonique";
     proposalServer();
@@ -295,6 +309,74 @@ describe("propositions", () => {
 
     expect(screen.getByText("En Allemagne, une commande expédiée est comptabilisée comme revenu.")).toBeInTheDocument();
     expect(screen.getByText("FR a la même demande.")).toBeInTheDocument();
+  });
+
+  it("affiche les actions autorisées, le fil et confirme le retrait au clavier", async () => {
+    proposalServer({ detail: (n) => detail(QUEUE.items.find((i) => i.id === n)!, {
+      viewer: { ...VIEWER, can_revise: true, can_close: true },
+      revisions: [{ rank: 1, commit: "abcdef123", date: "2026-10-30T08:00:00Z", author: "anna.k", note: "Première version", differences: 0 }],
+      reviews: [{ account: "claire.m", state: "approved", submitted_at: "2026-10-30T09:00:00Z", body: "", outdated: true }],
+    }) });
+    render(<Harness />);
+    expect(await screen.findByRole("link", { name: "Modifier ma proposition" })).toBeInTheDocument();
+    expect(screen.getByText(/revue dépassée/)).toBeInTheDocument();
+    expect(screen.getByText(/a envoyé la révision 1/)).toBeInTheDocument();
+    const trigger = screen.getByRole("button", { name: "Retirer la proposition" });
+    await userEvent.click(trigger);
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("affiche la justification une fois et les notes des révisions suivantes dans le fil", async () => {
+    proposalServer({ detail: (n) => detail(QUEUE.items.find((i) => i.id === n)!, {
+      revisions: [
+        { rank: 1, commit: "abcdef123", date: "2026-10-30T08:00:00Z", author: "anna.k", note: "", differences: 0 },
+        { rank: 2, commit: "fedcba123", date: "2026-11-11T14:05:00Z", author: "anna.k", note: "Correction de la définition", differences: 1 },
+      ],
+    }) });
+    render(<Harness />);
+    const thread = await screen.findByRole("region", { name: "Fil de la proposition" });
+    expect(screen.getAllByText("En Allemagne, une commande expédiée est comptabilisée comme revenu.")).toHaveLength(1);
+    expect(within(thread).getByText(/a envoyé la révision 1/)).toBeInTheDocument();
+    expect(within(thread).getByText("Correction de la définition")).toBeInTheDocument();
+  });
+
+  it("ordonne les instants et n'annonce bloquante que la dernière demande active", async () => {
+    proposalServer({ detail: (n) => detail(QUEUE.items.find((i) => i.id === n)!, {
+      revisions: [{ rank: 2, commit: "abcdef123", date: "2026-11-11T14:05:00+01:00", author: "julien.h", note: "Correction", differences: 1 }],
+      comments: [{ account: "anna.k", body: "Merci", created_at: "2026-11-11T13:20:00Z" }],
+      reviews: [
+        { account: "claire.m", state: "changes_requested", submitted_at: "2026-11-11T13:00:00Z", body: "À corriger", outdated: true, blocking: false },
+        { account: "claire.m", state: "approved", submitted_at: "2026-11-11T13:10:00Z", body: "", outdated: false, blocking: false },
+        { account: "marc.d", state: "changes_requested", submitted_at: "2026-11-11T13:15:00Z", body: "Encore à corriger", outdated: true, blocking: true },
+      ],
+    }) });
+    render(<Harness />);
+    const thread = await screen.findByRole("region", { name: "Fil de la proposition" });
+    const rows = await within(thread).findAllByRole("listitem");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("À corriger"), expect.stringContaining("Julien H. a envoyé la révision 2"),
+      expect.stringContaining("a approuvé"), expect.stringContaining("Encore à corriger"), expect.stringContaining("Merci"),
+    ]);
+    expect(rows[0]).not.toHaveTextContent("toujours bloquante");
+    expect(rows[3]).toHaveTextContent("demande toujours bloquante");
+  });
+
+  it("distingue une demande remplacée d'une demande encore bloquante", async () => {
+    proposalServer({ detail: (n) => detail(QUEUE.items.find((i) => i.id === n)!, {
+      reviews: [
+        { account: "claire.m", state: "changes_requested", submitted_at: "2026-11-11T13:00:00Z", body: "Demande remplacée", outdated: true, blocking: false },
+        { account: "claire.m", state: "approved", submitted_at: "2026-11-11T13:10:00Z", body: "", outdated: false, blocking: false },
+        { account: "julien.h", state: "changes_requested", submitted_at: "2026-11-11T13:15:00Z", body: "Demande active", outdated: true, blocking: true },
+      ],
+    }) });
+    render(<Harness />);
+    const thread = await screen.findByRole("region", { name: "Fil de la proposition" });
+    const replaced = await within(thread).findByText("Demande remplacée");
+    expect(replaced.closest("li")).not.toHaveTextContent("toujours bloquante");
+    expect(within(thread).getByText("Demande active").closest("li")).toHaveTextContent("demande toujours bloquante");
   });
 
   it("l'auteur ne peut pas approuver : bouton grisé et raison (critère 4)", async () => {

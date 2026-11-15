@@ -7,6 +7,8 @@
 
 ## Lancer les tests
 
+La CI [tests.yml](../../.github/workflows/tests.yml) lance les trois niveaux (core, front et e2e) sur chaque PR vers `main`.
+
 - Parcours : `cd app && npm run e2e`. Playwright démarre lui-même les serveurs Python, les faux Databricks, Snowflake et GitHub, et Vite, sur des ports fixes (1420, 8790 à 8799, 8020 pour le retour OAuth). Chromium passe tous les scénarios, puis WebKit les `*.webkit.spec.ts`. Un seul worker, et une seule exécution à la fois sur le poste : deux exécutions se disputeraient les ports. Si un port est pris, la configuration s'arrête avant tout lancement et nomme le port et son processus (`app/e2e/ports.ts`).
 - Tests de composants et unitaires : `cd app && npm test` (Vitest, jsdom). Ils rendent l'écran contre un faux serveur ; ils n'exercent pas de navigateur.
 
@@ -56,8 +58,12 @@
 | 0033 | 12 | 9 | 2 | 1 | 0 |
 | 0034 | 10 | 9 | 0 | 1 | 0 |
 | 0035 | 12 | 10 | 0 | 2 | 0 |
+| ADR 0040 | 2 | 1 | 0 | 1 | 0 |
+| ADR 0049 | 1 | 1 | 0 | 0 | 0 |
+| ADR 0055 | 1 | 1 | 0 | 0 | 0 |
+| ADR 0056 | 6 | 6 | 0 | 0 | 0 |
 | RAF | 11 | 7 | 0 | 4 | 0 |
-| **Total** | **332** | **263** | **6** | **63** | **0** |
+| **Total** | **341** | **271** | **6** | **64** | **0** |
 
 Lecture : « Test front e2e » compte les vérifications citées par un parcours Playwright, « Vitest seulement » celles qui n'ont qu'un test de composant. « Sans test front » regroupe les deux sections finales ; « dont testables » en est la part qui a une surface à l'écran.
 
@@ -153,9 +159,11 @@ Plan 0010, suivi de la revue globale (#151) · Test : `app/e2e/accueil.spec.ts` 
 - Limite : l'analyse de plusieurs adresses invalides (espace, fiche, `%` isolé) est rendue sans navigateur par `app/src/format.test.ts` › `[S-0010-11]`.
 
 ### S-0010-12 — Sous Tauri, l'échec de `get_server_info` ne laisse pas de repli sans token
-Plan 0010, suivi de la revue globale (#151) · Tests : `app/e2e/serveur-tauri.spec.ts` › `[S-0010-12]` ; Vitest : `app/src/api.test.ts` › `[S-0010-12]` (six tests)
+Plan 0010, suivi de la revue globale (#151) · Tests : `app/e2e/serveur-tauri.spec.ts` › `[S-0010-12]` ; Vitest : `app/src/api.test.ts` › `[S-0010-12]` (six tests) et `app/src/App.test.tsx` › `[S-0010-12]`
 - **Étant donné** un pont Tauri simulé dans la page (`window.__TAURI_INTERNALS__`) dont la commande `get_server_info` échoue, l'horloge de la page avançant à la main (`page.clock`), et le vrai serveur derrière
-- **Quand** j'ouvre l'accueil, puis laisse le démarrage épuiser ses essais
+- **Quand** j'ouvre l'accueil
+- **Alors** le démarrage est affiché sans bandeau ni requête vers le serveur
+- **Quand** je laisse le démarrage épuiser ses essais
 - **Alors** le bandeau « Serveur local injoignable » s'affiche, `invoke` a été réessayé (au moins trois appels) et aucune requête n'est partie vers le serveur
 - **Quand** l'application devient prête et que je clique « Réessayer »
 - **Alors** rien n'avait été retenu : `invoke` est interrogé de nouveau, le bandeau disparaît, l'accueil liste Groupe Nordis, toutes les requêtes portent `Authorization: Bearer` avec le token fourni, et axe-core ne relève aucune violation sérieuse, sur l'écran de démarrage avec son bandeau comme après la reprise
@@ -723,7 +731,7 @@ Plan 0013, critère 14 · Tests : `app/e2e/editor.spec.ts` › `[S-0013-14]` (de
 - **Alors** le champ `yaml_text` du brouillon contient `label: [ouvert`, et la vue YAML se rouvre avec ce texte inachevé
 - **Quand** (second test, Chromium) je saisis une description et que la page reçoit un vrai évènement `pagehide`, avant le délai d'enregistrement
 - **Alors** une requête `PUT` du brouillon part aussitôt avec la description, et l'API la relit
-- Limite : le test `pagehide` vérifie la requête, pas son option `keepalive`, qu'un test navigateur ne voit pas ; Vitest l'établit (`[S-0013-14] [S-0013-21]`). Le passage à `hidden` (`visibilitychange`) et la fermeture de la fenêtre Tauri (`onCloseRequested`, attente d'au plus deux secondes puis `destroy`) ne sont couverts que par Vitest (`[S-0013-14] [S-0013-20] [S-0013-21]`, `[S-0013-20]`) ; une vérification dans la vraie fenêtre Tauri reste à faire (ADR 0040). Le champ `yaml_text` côté serveur : `core/tests/repo/test_editor_api.py::test_draft_keeps_the_unfinished_yaml_text_and_stays_valid_without_it`.
+- Limite : le test `pagehide` vérifie la requête, pas son option `keepalive`, qu'un test navigateur ne voit pas ; Vitest l'établit (`[S-0013-14] [S-0013-21]`). Le passage à `hidden` (`visibilitychange`) n'est couvert que par Vitest (`[S-0013-14] [S-0013-20] [S-0013-21]`) ; la fermeture de la fenêtre Tauri (`onCloseRequested`, écriture puis `destroy`) l'est en e2e par S-0040-01, avec un pont simulé, et sa partie native par S-0040-02. Le champ `yaml_text` côté serveur : `core/tests/repo/test_editor_api.py::test_draft_keeps_the_unfinished_yaml_text_and_stays_valid_without_it`.
 
 ### S-0013-15 — « Repartir de la vN » demande confirmation, au clavier
 Plan 0013, critère 15 · Test : `app/e2e/editor.spec.ts` › `[S-0013-15]` ; Vitest : `app/src/screens/Editor.test.tsx` › `[S-0013-15]`
@@ -787,7 +795,7 @@ Plan 0013, critère 20 · Test : `app/src/screens/Editor.test.tsx` › `[S-0013-
 - **Étant donné** l'éditeur sous Tauri (API de fenêtre simulée) et une écriture en attente ou lancée
 - **Quand** la fenêtre demande à se fermer
 - **Alors** la fermeture est d'abord empêchée, la sauvegarde est attendue (au plus deux secondes), puis la fenêtre est détruite une seule fois ; quitter l'écran retire l'écouteur
-- Limite : Vitest seulement, sans fenêtre native. Un pont Tauri simulé dans la page ne prouverait rien de plus que l'API de fenêtre simulée de Vitest : `onCloseRequested` et `destroy` n'ont d'effet à l'écran que dans la vraie fenêtre. Le départ de page (`pagehide`) du navigateur est vu en e2e par S-0013-14. Le cycle réel de fermeture de la WebView reste une vérification dans l'application Tauri (ADR 0040).
+- Limite : le délai de deux secondes, l'écriture déjà lancée et le retrait de l'écouteur ne sont vérifiés que par Vitest, sans fenêtre native. Le parcours « modifier, fermer, rouvrir » est en e2e, avec un pont Tauri simulé et le vrai serveur, par S-0040-01 ; le cycle natif de fermeture et de sortie par S-0040-02 (`scripts/smoke-app.sh`). Le départ de page (`pagehide`) du navigateur est vu en e2e par S-0013-14.
 
 ### S-0013-21 — `keepalive` seulement sous 60 Kio
 Plan 0013, critère 21 · Tests : `app/e2e/editor.spec.ts` › `[S-0013-21]` ; Vitest : `app/src/screens/Editor.test.tsx` › `[S-0013-21]` (deux tests : `pagehide` d'un petit brouillon, `visibilitychange` d'un corps de plus de 60 Kio en UTF-8) et sa frontière à 61 439 et 61 440 octets (même fichier, `[S-0013-21]`)
@@ -1252,6 +1260,7 @@ Plan 0014, critère 5 (envoi), critère 4 (le décompte ne bouge pas) · Test : 
 - **Alors** le premier envoi affiche « Écrire un commentaire avant d'envoyer. » sans aucune requête POST ; le commentaire entre dans le fil sous « Claire M. », le champ se vide
 - **Et** la demande de changements ferme le formulaire et ajoute « Claire M. demande des changements » avec son texte ; « Validations : 0 / 2 » et « Approuver (0 / 2) » restent inchangés
 - **Et** après rechargement le fil affiche les trois entrées, dans l'ordre
+- Le fil de la proposition (ADR 0056) montre aussi l'entrée « a envoyé la révision 1 » (commit de création), vérifiée présente ; sa place n'est pas comparée au commentaire de démonstration, qui peut tomber dans la même seconde que le commit de création (dates à la seconde).
 
 ## Comparaison
 
@@ -1535,7 +1544,7 @@ Plan 0008, critère 5 · Test : `app/e2e/connexions-testables.spec.ts` › `[S-0
 Plan 0008, critère 6 · Test : `app/e2e/comparaison-reelle.spec.ts` › `[S-0008-06]`
 - **Étant donné** un espace isolé sur le serveur 8793, nordis-fr seule cochée, l'accès dbx-fr obtenu par l'OAuth du faux Databricks, et le faux qui annonce 60 000 lignes en un seul bloc (limite : 50 000)
 - **Quand** je lance la comparaison
-- **Alors** la bannière « Comparaison n° N en échec » s'affiche dans le panneau de lancement puis dans le détail, et son message traduit cite la limite (« Le résultat dépasse 50 000 lignes »), sans le code technique `result_too_large`
+- **Alors** la bannière « Comparaison n° N en échec » s'affiche dans le panneau de lancement puis dans le détail (les deux emplacements sont voulus, décision du 11 novembre 2026), et son message traduit cite la limite (« Le résultat dépasse 50 000 lignes »), sans le code technique `result_too_large`
 - **Et** la requête a été annulée chez la plateforme, axe-core ne relève aucune violation sérieuse, et l'historique garde l'exécution en échec
 - Limite : le faux annonce le dépassement dès le premier bloc ; le refus sans rapatriement du premier bloc est aussi vérifié par `core/tests/connections/test_connections.py::test_too_many_rows_are_refused_without_fetching` et `core/tests/compare/test_compare.py::test_too_many_rows_fail_the_variant_only`.
 
@@ -2149,7 +2158,15 @@ Plan 0035, critère 2 · Test : `app/e2e/bout-en-bout.spec.ts` › `[S-0035-02]`
 - **Quand** Claire approuve à son tour la nouvelle version
 - **Alors** sa demande est remplacée, la proposition est prête, elle la fusionne : le dépôt a la définition corrigée, le message `Atlas-Review: approved by claire.m, marc.d` et le tag `doc/taux-de-recouvrement/v1`
 - **Et** chez Claire, qui a fusionné, le catalogue dit v1 et la fiche montre la définition corrigée ; chez Anna, la proposition figure parmi les fusionnées
-- Limite : l'écran n'a pas de route pour réviser ou fermer une proposition (« Reste à faire » du plan 0006) : la correction passe par un commit poussé à la main sur la branche. Les approbations données avant ce commit ne comptent plus (S-0006-03).
+- La révision depuis Atlas est décrite en S-0056-01 ; ce parcours conserve son commit poussé à la main.
+
+### S-0055-01 — Références épinglées sur une version antérieure
+ADR 0055 · Test : `app/e2e/references-en-retard.spec.ts` › `[S-0055-01]` ; Vitest : `app/src/screens/Fiche.test.tsx` › `[S-0055-01]`
+- **Étant donné** Marge brute et Panier moyen épinglés sur Revenu net v4, devenu v5, et un KPI référencé à jour
+- **Quand** je consulte les fiches de Marge brute et de Revenu net
+- **Alors** la fiche de Marge brute affiche « Revenu net : épinglé v4, version courante v5 » avec un lien vers Revenu net
+- **Et** « Référencé par » sur Revenu net indique « épinglé v4 » à côté de Marge brute et Panier moyen, sans indication pour les références à jour
+- Limite : la démo n'a aucune référence restée à jour après la v5 ; le parcours vérifie l'absence de mention avant le passage en v5, et une fiche mêlant entrées en retard et à jour est couverte par `app/src/screens/Fiche.test.tsx` › `[S-0055-01]`.
 
 ### S-0035-03 — Revenu net de v4 à v5, avec deux KPI qui s'y appuient
 Plan 0035, critère 3 · Test : `app/e2e/bout-en-bout.spec.ts` › `[S-0035-03]`
@@ -2159,7 +2176,7 @@ Plan 0035, critère 3 · Test : `app/e2e/bout-en-bout.spec.ts` › `[S-0035-03]`
 - **Quand** Marc puis Claire approuvent et que Claire fusionne
 - **Alors** le dépôt a `version: 5` et le nouveau libellé, le tag `doc/revenu-net/v5`, la trace des deux revues, et aucun changement dans `kpis/marge-brute.yaml`, `kpis/panier-moyen.yaml` ni `variants/`
 - **Et** chez Claire, le catalogue dit v5 pour Revenu net et v2 pour Marge brute, l'onglet Versions compte 5 versions dont la v5 courante, le diff de v4 à v5 est un écart « Sans effet » et le graphe de la v5 porte le nouveau libellé, et « Référencé par » liste toujours Panier moyen et Marge brute
-- Limite : les références restent épinglées sur la v4 : l'écran n'indique pas qu'elles sont en retard sur la v5 (constat, pas un test).
+- Le signalement des références en retard est couvert par S-0055-01.
 
 ### S-0035-04 — Une règle locale : déclinaison nordis-it en surcharge hors points déclarés
 Plan 0035, critère 4 · Test : `app/e2e/bout-en-bout.spec.ts` › `[S-0035-04]`
@@ -2239,6 +2256,88 @@ Plan 0035, critère 10 · Test : `app/e2e/bout-en-bout.spec.ts` › `[S-0035-10]
 - **Quand** elle choisit « Proposer une modification »
 - **Alors** le brouillon s'ouvre en « Revenu net : v6 · brouillon »
 - Limite : la synchronisation automatique d'un espace (ADR 0049) relit le dépôt à l'ouverture de l'espace et aux changements d'écran, au plus une fois toutes les 30 s : le test s'appuie sur ce comportement sans bouton « Synchroniser ».
+
+## Fermeture de la fenêtre Tauri
+
+`app/e2e/fermeture-tauri.spec.ts` : la fermeture de la fenêtre principale sous Tauri (ADR 0040, issue #154), sur une copie isolée de l'espace de démonstration du serveur principal. Sous macOS, Cmd+Q et « Quitter » du Dock aboutissent à cette fermeture ; la partie native est S-0040-02. Le pont Tauri est simulé dans la page (`__TAURI_INTERNALS__`, comme `serveur-tauri.spec.ts`) au niveau où `@tauri-apps/api` l'appelle : `get_server_info`, `plugin:event|listen` de `tauri://close-requested` (callback enregistré par `transformCallback`, que le test rappelle comme la fenêtre native) et `plugin:window|destroy`. Le serveur est le vrai. Un journal dans la page relève, dans l'ordre, l'envoi de chaque `PUT` du brouillon, sa réponse et la destruction.
+
+**ADR 0040**
+
+### S-0040-01 — Quitter juste après une modification écrit le brouillon avant de détruire la fenêtre
+ADR 0040 · Tests : `app/e2e/fermeture-tauri.spec.ts` › `[S-0040-01]` (deux tests : avec et sans modification) ; Vitest : `app/src/screens/Editor.test.tsx` › `[S-0013-20]`
+- **Étant donné** l'éditeur de Revenu net ouvert sous Tauri (pont simulé), sans brouillon, « Compilable Databricks, Snowflake », un écouteur de `tauri://close-requested` enregistré et l'horloge de la page figée (`page.clock`), si bien que l'enregistrement différé de 800 ms ne peut pas partir
+- **Quand** je saisis un nouveau libellé dans Propriétés
+- **Alors** le titre le reprend et aucune écriture n'est encore partie
+- **Quand** la fenêtre demande à se fermer (`tauri://close-requested`, comme après Cmd+Q)
+- **Alors** le journal relève exactement l'envoi du `PUT` du brouillon, sa réponse 200, puis `destroy` de la fenêtre `main` ; le brouillon relu par l'API porte le nouveau libellé
+- **Quand** je ferme la page et rouvre l'éditeur du même KPI dans une page neuve
+- **Alors** le titre et le champ « Libellé » montrent la modification, « Brouillon local repris » s'affiche et le contrôle axe ne relève rien de sérieux
+- **Quand** (second test) j'ouvre l'éditeur sans rien modifier et que la fenêtre demande à se fermer
+- **Alors** le journal ne relève que `destroy`, aucun `PUT`, et l'API ne rend toujours pas de brouillon
+- Limite : `tauri://close-requested` est émis par le test, pas par la fenêtre native ; le délai de garde de deux secondes n'est vérifié que par Vitest (`[S-0013-20]`). Le premier test échoue si la fermeture n'attend pas `flushDraft()` : sans cette attente, le journal ne relève que `destroy`.
+
+## Synchronisation automatique
+
+`app/e2e/synchronisation-auto.spec.ts` : la synchronisation automatique d'un espace (ADR 0049), sur une copie isolée de l'espace de démonstration du serveur principal. La réponse « occupé » du serveur est simulée par une interception de `POST /api/workspaces/<id>/sync/auto` ; axe-core ne relève aucune violation sérieuse ou critique avec le bandeau affiché.
+
+**ADR 0049**
+
+### S-0049-01 — Synchronisation automatique encore occupée
+ADR 0049 · Test : `app/e2e/synchronisation-auto.spec.ts` › `[S-0049-01]`
+- **Étant donné** un espace dont la synchronisation automatique reste occupée
+- **Quand** les tentatives automatiques atteignent leur limite
+- **Alors** un bandeau indique que la synchronisation n'a pas encore eu lieu et sera retentée au prochain changement d'écran
+- **Quand** une synchronisation ultérieure réussit
+- **Alors** le bandeau disparaît
+- Limite : le test Playwright épuise les 20 essais ; l'échéance de 8 s atteinte pendant la pause entre deux essais est vérifiée par `app/src/screens/WorkspaceShell.test.tsx` › « signale le délai de synchronisation atteint pendant une pause ».
+
+## Révisions et retrait des propositions
+
+`app/e2e/propositions-revisions.spec.ts` : réviser une proposition ouverte depuis l'éditeur et la retirer (ADR 0056), sur une copie isolée de l'espace de démonstration, à quatre comptes (anna.k, claire.m, marc.d, julien.h, un serveur chacun). Les gestes passent par l'écran ; l'API ne sert qu'à préparer l'état (demande de changements de départ) et à constater un refus. Le dépôt distant isolé est relu après chaque geste ; axe-core ne relève aucune violation sérieuse ou critique sur le détail, l'éditeur en mode révision, le volet « Envoyer la révision » et la boîte « Retirer la proposition ? ».
+
+**ADR 0056**
+
+### S-0056-01 — Révision et fusion
+ADR 0056 · Test : `app/e2e/propositions-revisions.spec.ts` › `[S-0056-01]`
+- **Étant donné** la proposition n° 3 de julien.h (Revenu net v5), approuvée par marc.d, où claire.m demande des changements
+- **Quand** Julien choisit « Modifier ma proposition », change le libellé de n02 dans l'éditeur (« Revenu net : Révision de la proposition n° 3 ») et envoie la révision avec une note facultative
+- **Alors** la branche a un commit de plus, enfant de l'ancienne tête, avec la note ; main n'a pas bougé ; le fil montre « a envoyé la révision 2 · 1 écart(s) · <commit> » et la note, l'approbation de Marc « (revue dépassée) », la demande de Claire « (sur un ancien commit, demande toujours bloquante) », et la file « Validations : 0 / 2 »
+- **Quand** Marc approuve la nouvelle tête
+- **Alors** « Validations : 1 / 2 », « Changements demandés par claire.m. » demeure, pas de bouton « Fusionner », la fusion demandée à l'API est refusée (409 `not_ready`) et main n'a pas bougé
+- **Quand** Claire approuve à son tour
+- **Alors** « Validations : 2 / 2 · prête à fusionner » ; elle fusionne : main a le libellé révisé, `Atlas-Review: approved by claire.m, marc.d` et le tag `doc/revenu-net/v5`
+- **Et** l'entrée de révision est attribuée à « Julien H. » (le compte Atlas), le fil suit l'ordre chronologique (demande, révision 2, nouvelle approbation de Marc), et la demande levée par l'approbation de Claire n'est plus dite « toujours bloquante » mais « (revue dépassée) »
+
+### S-0056-02 — Révision refusée
+ADR 0056 · Test : `app/e2e/propositions-revisions.spec.ts` › `[S-0056-02]`
+- **Étant donné** la proposition n° 5 d'anna.k, ouverte
+- **Quand** claire.m, référente, l'affiche, puis ouvre à la main l'adresse de l'éditeur de révision, puis tente la révision par l'API
+- **Alors** elle a « Retirer la proposition » mais pas « Modifier ma proposition », l'éditeur affiche « Seul l'auteur peut réviser la proposition. » sans bouton « Envoyer la révision », l'API répond 403 `forbidden`, et la branche distante n'a pas bougé
+
+### S-0056-03 — Retrait par l'auteur
+ADR 0056 · Test : `app/e2e/propositions-revisions.spec.ts` › `[S-0056-03]`
+- **Étant donné** la proposition n° 5 d'anna.k, ouverte
+- **Quand** Anna choisit « Retirer la proposition », annule (le focus revient au bouton), puis recommence avec un motif et confirme
+- **Alors** « Proposition n° 5 retirée » et « La branche est conservée. » ; la proposition quitte les ouvertes ; dans « Fermées », elle porte « Fermée », le fil montre « Proposition retirée : <motif> » sous le nom d'Anna, sans bouton « Modifier » ni « Retirer » ; la branche distante garde sa tête et main n'a pas bougé
+
+### S-0056-04 — Retrait par un référent
+ADR 0056 · Test : `app/e2e/propositions-revisions.spec.ts` › `[S-0056-04]`
+- **Étant donné** les propositions n° 5 d'anna.k et n° 1 de sofia.r (Finance), ouvertes
+- **Quand** claire.m, référente Finance, retire la n° 5, et julien.h, référent de l'espace sans domaine, retire la n° 1, chacun avec un motif
+- **Alors** chacune est fermée, avec « Proposition retirée : <motif> » sous le nom du référent ; Claire n'a pas « Modifier ma proposition » ; Anna voit sa proposition fermée et le motif de Claire ; les deux branches distantes gardent leur tête
+
+### S-0056-05 — Retrait refusé
+ADR 0056 · Test : `app/e2e/propositions-revisions.spec.ts` › `[S-0056-05]`
+- **Étant donné** la proposition n° 5 d'anna.k, ouverte
+- **Quand** marc.d, validateur Finance ni auteur ni référent, l'affiche puis tente le retrait par l'API
+- **Alors** il peut l'approuver mais n'a ni « Retirer la proposition » ni « Modifier ma proposition », l'API répond 403 `forbidden`, et chez Anna la proposition reste ouverte (« Validations : 0 / 2 »), sans trace de retrait dans le fil, sa branche intacte
+
+### S-0056-06 — Révision invalide
+ADR 0056 · Test : `app/e2e/propositions-revisions.spec.ts` › `[S-0056-06]`
+- **Étant donné** la proposition n° 3 de julien.h, ouverte
+- **Quand** Julien ouvre l'éditeur de révision et retire, en YAML, le traitement des valeurs nulles du filtre n02
+- **Alors** au retour au canevas, l'onglet de validation montre une erreur sur n02 ; « Envoyer la révision » est `aria-disabled` et son clic dit « Soumission bloquée : 1 erreur à corriger », sans volet ni requête de révision
+- **Et** le serveur refuse le même document (422 `invalid_document`, diagnostic d'erreur sur n02), la branche distante garde sa tête, et le fil n'a toujours qu'une révision, l'approbation de Marc non dépassée
 
 ## Parcours WebKit
 
@@ -2366,6 +2465,7 @@ Rien, à l'écran, ne montre ces vérifications : elles portent sur un compte r�
 
 | Identifiant | Vérification | Pourquoi sans test front | Couverture |
 |---|---|---|---|
+| S-0040-02 | Sous macOS, Cmd+Q, le menu de l’application et « Quitter » du Dock passent par la fermeture de la fenêtre principale et l’application se termine, sans serveur orphelin. Vérifier aussi les raccourcis d’édition, la fermeture normale et la déconnexion ou l’arrêt de macOS sans interruption de session ; en cas de fermeture empêchée, vérifier que macOS est libéré après le délai. | Fenêtre, menus et Apple Events natifs macOS requis ; l’écriture du brouillon à la fermeture est S-0040-01. | `scripts/smoke-app.sh` : pour Cmd-Q (frappe par System Events) puis pour l’Apple Event « Quitter » (même chemin `terminate:` que le Dock), le journal de l’app contient exactement, dans l’ordre et une seule fois, « quitter intercepté », « fermeture demandée », « fenêtre détruite », « sortie confirmée » ; l’app se termine en moins de 4 s et aucun processus serveur ne reste. Restent à vérifier à la main la déconnexion ou l’arrêt de macOS et la libération après le délai de cinq secondes. |
 | S-0001-11 | Le JSON Schema commité correspond au modèle et rend le même verdict que pydantic | Logique serveur sans écran : fichier publié, qu'aucun écran ne lit | `core/tests/model/test_jsonschema.py` |
 | S-0001-12 | `atlas validate` rend 0 ou 1 ; sortie `--format json` conforme | CLI, absente de l'application | `core/tests/model/test_cli.py::test_each_invalid_document_exits_one`, `::test_json_output_lists_errors_in_the_documented_format` |
 | S-0001-13 | `import skifer_atlas.model` ne charge ni `pyspark` ni `fastapi` | Graphe d'import Python, sans effet à l'écran | `core/tests/model/test_imports.py::test_model_does_not_import_spark_or_the_server` |
@@ -2399,7 +2499,7 @@ Rien, à l'écran, ne montre ces vérifications : elles portent sur un compte r�
 | S-0009-09 | Lignes rapatriées par plateforme ≤ cellules du scope | Compteur du connecteur, non affiché | `core/tests/compare/test_compare.py::test_sql_is_kept_and_nothing_extracted_remains` |
 | S-0009-11 | À tolérance nulle, deux entiers consécutifs au-delà de 2⁵³ et deux décimaux distincts au-delà de la précision d'un double sont hors tolérance | Calcul de réconciliation : l'écran ne reçoit et n'affiche que des écarts en pourcentage déjà arrondis, jamais les entiers ou décimaux exacts | `core/tests/compare/test_compare.py::test_exact_numeric_reconciliation` |
 | S-0009-12 | Deux dimensions décimales distinctes qui donneraient le même double restent deux cellules ; deux représentations de la même valeur se rejoignent | Appariement des cellules côté serveur : l'écran affiche les cellules qu'on lui renvoie, sans refaire l'appariement | `core/tests/compare/test_compare.py::test_precise_decimal_dimensions_do_not_collapse` |
-| S-0010-08 | Aucune couleur ou taille en dur hors `tokens.css` | Contrôle statique des sources : un rendu ne prouve pas l'absence de littéraux | `app/src/tokens.test.ts` |
+| S-0010-08 | Aucune couleur ou taille en dur hors `tokens.css` (unités CSS et couleurs nommées ou fonctionnelles comprises, exceptions structurelles explicites) | Contrôle statique des sources : un rendu ne prouve pas l'absence de littéraux | `app/src/tokens.test.ts` |
 | S-0018-01 | SSO réel sur un compte de test, `test` puis requête agrégée | Compte réel Snowflake ; le faux SSO est exercé par S-0018-02 | `core/tests/connections/test_snowflake.py::test_real_account` (marqué `snowflake`) |
 | S-0018-03 | Revenu net, FR sur Databricks et DE sur Snowflake, s'exécute et se réconcilie | Compte réel sur les deux plateformes ; le faux Databricks ne calcule pas le SQL métier | `core/tests/repo/test_snowflake_compare.py::test_comparison_across_databricks_and_snowflake` (instable dans la suite complète, voir le Reste à faire) |
 | S-0018-04 | Le contrôle de cardinalité échoue sur Snowflake avec une table dupliquée | Exécution sur Snowflake | `core/tests/repo/test_snowflake_compare.py::test_cardinality_check_fails_on_snowflake` |

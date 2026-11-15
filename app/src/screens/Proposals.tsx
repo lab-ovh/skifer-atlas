@@ -10,7 +10,8 @@ import {
   type ProposalStatus,
   type Workspace,
 } from "../api";
-import { Banner } from "../components/Banner";
+import { Banner, RetryAction } from "../components/Banner";
+import { Confirmation } from "../components/Confirmation";
 import { DiffColumns } from "../components/DiffColumns";
 import { Select } from "../components/Select";
 import { ago, initials, NATURES, plural } from "../format";
@@ -118,10 +119,16 @@ export function Proposals({ ws, params, heading: title, onMerged }: { ws: Worksp
   const domain = (params.domain === MINE && ready?.review_domains.length === 0 ? ALL : params.domain)
     || (ready && ready.review_domains.length > 0 ? MINE : ALL);
   const entity = params.entity ?? "";
+  const kpi = params.kpi ?? "";
+  const author = params.author ?? "";
+  const kpiOf = (item: ProposalItem) => item.kpi_id ?? (item.document_kind === "kpi" ? item.document_id : null);
+  const kpis = [...new Map((ready?.items ?? []).filter((i) => kpiOf(i)).map((i) => [kpiOf(i)!, i.document_label])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const authors = [...new Set((ready?.items ?? []).map((i) => i.author))].sort();
   const items = (ready?.items ?? []).filter(
     (item) =>
       (domain === ALL || (domain === MINE ? ready!.review_domains.includes(item.domain ?? "") : item.domain === domain)) &&
-      (entity === "" || (entity === CANONICAL ? item.entity === null : item.entity === entity)),
+      (entity === "" || (entity === CANONICAL ? item.entity === null : item.entity === entity)) &&
+      (!kpi || kpiOf(item) === kpi) && (!author || item.author === author),
   );
   const selected = items.find((item) => String(item.id) === params.n) ?? items[0] ?? null;
   const name = (account: string) => ready?.members[account] ?? account;
@@ -181,6 +188,14 @@ export function Proposals({ ws, params, heading: title, onMerged }: { ws: Worksp
                 </option>
               ))}
             </Select>
+            <Select aria-label="KPI" className="select-filter" value={kpi} onChange={(event) => setParams({ kpi: event.target.value, n: "" }, { push: true })}>
+              <option value="">Tous les KPI</option>
+              {kpis.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </Select>
+            <Select aria-label="Auteur" className="select-filter" value={author} onChange={(event) => setParams({ author: event.target.value, n: "" }, { push: true })}>
+              <option value="">Tous les auteurs</option>
+              {authors.map((id) => <option key={id} value={id}>{name(id)}</option>)}
+            </Select>
           </div>
         </div>
         {queue.kind === "loading" && (
@@ -189,7 +204,7 @@ export function Proposals({ ws, params, heading: title, onMerged }: { ws: Worksp
           </p>
         )}
         {queue.kind === "error" && (
-          <Banner tone="bad" title={queue.error.title}>
+          <Banner tone="bad" title={queue.error.title} action={<RetryAction onRetry={() => setRevision((n) => n + 1)} />}>
             {queue.error.text}
           </Banner>
         )}
@@ -276,6 +291,9 @@ function Detail({
   const [detail, setDetail] = useState<Load<ProposalDetail>>({ kind: "loading" });
   const [graphs, setGraphs] = useState<Load<ProposalGraphs>>({ kind: "loading" });
   const [asking, setAsking] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [reason, setReason] = useState("");
+  const closeTrigger = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Explained | null>(null);
 
@@ -357,6 +375,8 @@ function Detail({
         </div>
         {open && viewer && (
           <div className="proposal-actions">
+            {viewer.can_revise && <a className="btn btn-neutral" href={href.editor(ws.id, { from: item.document_id, proposal: String(item.id) })}>Modifier ma proposition</a>}
+            {viewer.can_close && <button ref={closeTrigger} type="button" className="btn btn-neutral" onClick={() => setClosing(true)}>Retirer la proposition</button>}
             {!shown.ready_to_merge && (
               <button
                 type="button"
@@ -401,11 +421,16 @@ function Detail({
       )}
       {/* Seul habilité (ADR 0008) : la fusion se fait sans revue, et la proposition le dit. */}
       {open && shown.merge_mode === "no_other_eligible" && shown.mention && <p className="proposal-status muted">{shown.mention}</p>}
+      {detail.kind === "error" && <Banner tone="bad" title={detail.error.title} action={<RetryAction onRetry={() => onChanged()} />}>{detail.error.text}</Banner>}
       {failure && (
         <Banner tone="bad" title={failure.title}>
           {failure.text}
         </Banner>
       )}
+      {closing && <Confirmation title="Retirer la proposition ?" description="Ce retrait est irréversible depuis Atlas." action="Retirer la proposition" busy={busy} returnFocusTo={closeTrigger} onCancel={() => setClosing(false)} onConfirm={() => void act(() => api.closeProposal(ws.id, item.id, reason), { title: `Proposition n° ${item.id} retirée`, text: "La branche est conservée." }).then((ok) => { if (ok) setClosing(false); })}>
+        <label htmlFor={`${tipId}-reason`}>Motif facultatif</label>
+        <textarea id={`${tipId}-reason`} value={reason} onChange={(event) => setReason(event.target.value)} />
+      </Confirmation>}
       {asking && viewer?.can_review && (
         <ChangesForm
           busy={busy}
@@ -549,8 +574,9 @@ function Thread({
   // Commentaires et revues, dans l'ordre chronologique.
   const entries = [
     ...(detail?.comments ?? []).map((c) => ({ account: c.account, at: c.created_at, body: c.body, action: null as string | null })),
-    ...(detail?.reviews ?? []).map((r) => ({ account: r.account, at: r.submitted_at, body: r.body, action: REVIEWS[r.state] ?? r.state })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
+    ...(detail?.reviews ?? []).map((r) => ({ account: r.account, at: r.submitted_at, body: r.body, action: `${REVIEWS[r.state] ?? r.state}${r.outdated ? (r.blocking ? " (sur un ancien commit, demande toujours bloquante)" : " (revue dépassée)") : ""}` })),
+    ...(detail?.revisions ?? []).map((r) => ({ account: r.author, at: r.date, body: r.note, action: `a envoyé la révision ${r.rank} · ${r.differences} écart(s) · ${r.commit.slice(0, 7)}` })),
+  ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -564,7 +590,7 @@ function Thread({
   return (
     <section className="card proposal-card" aria-labelledby={`${id}-title`}>
       <h3 id={`${id}-title`} className="section-label">
-        Commentaires
+        Fil de la proposition
       </h3>
       {entries.length === 0 && <p className="muted">Aucun commentaire.</p>}
       {entries.length > 0 && (

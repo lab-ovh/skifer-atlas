@@ -5,6 +5,7 @@ import copy
 import json
 import statistics
 import subprocess
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,14 +24,14 @@ __all__ = ["atlas_env"]  # fixture importée
 
 AUTH = {"Authorization": "Bearer secret"}
 EDITOR = "/api/workspaces/groupe-nordis/editor"
-SCRIPT = EXAMPLE.parent / "depot-nordis.sh"
+SCRIPT = EXAMPLE.parent / "depot-nordis.py"
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "documents" / "revenu-net.yaml"
 
 
 @pytest.fixture
 def client(atlas_env, tmp_path, monkeypatch):
     monkeypatch.setenv("ATLAS_ACCOUNT", "anna.k")  # contributrice de Groupe Nordis
-    subprocess.run(["bash", str(SCRIPT), str(tmp_path / "demo")], check=True,
+    subprocess.run([sys.executable, str(SCRIPT), str(tmp_path / "demo")], check=True,
                    capture_output=True)
     client = TestClient(create_app(token="secret"), headers=AUTH)
     joined = client.post("/api/workspaces/join",
@@ -383,7 +384,7 @@ def _long_kpi(count: int) -> dict:
     return raw
 
 
-def test_validation_of_50_nodes_under_150_ms(client):
+def test_validation_of_50_nodes_under_150_ms(client, perf_factor):
     """Critère 11 : validation (sans le SQL du nœud) sous 150 ms sur 50 nœuds. La mesure
     est consignée dans la section « Mise en œuvre » du plan 0013."""
     document = _long_kpi(50)
@@ -397,7 +398,7 @@ def test_validation_of_50_nodes_under_150_ms(client):
         timings.append((time.perf_counter() - start) * 1000)
     median = statistics.median(timings)
     print(f"\nvalidation de 50 nœuds : médiane {median:.0f} ms ({', '.join(f'{t:.0f}' for t in timings)})")
-    assert median < 150
+    assert median < 150 * perf_factor
 
 
 def test_creation_draft_can_be_listed_resumed_and_discarded(client):

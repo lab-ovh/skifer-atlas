@@ -294,7 +294,7 @@ function Definition({ ws, doc }: { ws: Workspace; doc: DocumentSheet }) {
               <ul className="card-list">
                 {doc.variants.map((v) => (
                   <li key={v.id}>
-                    <strong>{v.entity}</strong>
+                    <strong><a href={href.document(ws.id, v.id)}>{v.entity}</a></strong>
                     <ModeBadge mode={v.mode} count={v.override_count} />
                   </li>
                 ))}
@@ -304,7 +304,7 @@ function Definition({ ws, doc }: { ws: Workspace; doc: DocumentSheet }) {
         )}
         <div className="card">
           <span className="section-label">Dépendances (tous domaines)</span>
-          <DependencyFacts doc={doc} />
+          <DependencyFacts ws={ws} doc={doc} />
           <Impact count={doc.dependencies.impact} />
         </div>
       </div>
@@ -350,21 +350,26 @@ function CanonicalDiffView({ ws, doc, node }: { ws: Workspace; doc: DocumentShee
   );
 }
 
-function names(items: DocumentSheet["dependencies"]["references"]) {
-  if (items.length === 0) return "—";
-  return items.map((d) => `${d.label ?? d.id}${d.domain_label ? ` (${d.domain_label})` : ""}`).join(" · ");
-}
-
-function DependencyFacts({ doc }: { doc: DocumentSheet }) {
+function DependencyFacts({ ws, doc }: { ws: Workspace; doc: DocumentSheet }) {
   return (
     <dl className="facts facts-stacked">
       <div>
         <dt>Références</dt>
-        <dd>{names(doc.dependencies.references)}</dd>
+        <dd>{doc.dependencies.references.length === 0 ? "—" : doc.dependencies.references.map((d, i) => (
+          <span key={`${d.id}-${d.kind}`}>{i > 0 && " · "}<a href={href.document(ws.id, d.id)}>{d.label ?? d.id}</a>{d.domain_label && ` (${d.domain_label})`}</span>
+        ))}
+          {doc.dependencies.references.filter((d) => d.outdated).map((d) => (
+            <div key={`${d.id}-${d.kind}`} className="fact-warn">
+              <a href={href.document(ws.id, d.id)}>{d.label ?? d.id}</a> : épinglé v{d.version}, version courante v{d.current_version}
+            </div>
+          ))}
+        </dd>
       </div>
       <div>
         <dt>Référencé par</dt>
-        <dd>{names(doc.dependencies.referenced_by)}</dd>
+        <dd>{doc.dependencies.referenced_by.length === 0 ? "—" : doc.dependencies.referenced_by.map((d, i) => (
+          <span key={`${d.id}-${d.kind}`}>{i > 0 && " · "}<a href={href.document(ws.id, d.id)}>{d.label ?? d.id}</a>{d.outdated && ` (épinglé v${d.version})`}{d.domain_label && ` (${d.domain_label})`}</span>
+        ))}</dd>
       </div>
     </dl>
   );
@@ -408,7 +413,7 @@ function Variants({ ws, doc }: { ws: Workspace; doc: DocumentSheet }) {
             <tbody>
               {doc.variants.map((v) => (
                 <tr key={v.id}>
-                  <th scope="row">{v.entity}</th>
+                  <th scope="row"><a href={href.document(ws.id, v.id)}>{v.entity}</a></th>
                   <td>
                     <ModeBadge mode={v.mode} count={v.override_count} />
                   </td>
@@ -588,6 +593,9 @@ function Dependencies({ ws, doc }: { ws: Workspace; doc: DocumentSheet }) {
                     ) : (
                       <a href={href.document(ws.id, d.id)}>{d.label ?? d.id}</a>
                     )}
+                    {d.outdated && (title === "Références"
+                      ? <span className="fact-warn">épinglé v{d.version}, version courante v{d.current_version}</span>
+                      : <span className="fact-warn">épinglé v{d.version}</span>)}
                     <span className="muted">
                       {[KIND_LABELS[d.document_kind ?? ""] ?? d.document_kind, d.domain_label ?? d.domain, d.version && `v${d.version}`]
                         .filter(Boolean)
@@ -749,12 +757,12 @@ function ScopeAndComparisons({ ws, doc }: { ws: Workspace; doc: DocumentSheet })
       {runs.kind === "loading" && <Pending>Chargement des comparaisons…</Pending>}
       {runs.kind === "error" && <Failure error={runs.error} />}
       {runs.kind === "ready" && runs.value.length === 0 && <p className="muted">Aucune comparaison chiffrée pour ce KPI.</p>}
-      {runs.kind === "ready" && runs.value.length > 0 && <Runs runs={runs.value} />}
+      {runs.kind === "ready" && runs.value.length > 0 && <Runs ws={ws} kpi={doc.id} runs={runs.value} />}
     </Panel>
   );
 }
 
-function Runs({ runs }: { runs: ComparisonRun[] }) {
+function Runs({ ws, kpi, runs }: { ws: Workspace; kpi: string; runs: ComparisonRun[] }) {
   return (
     <TableWrap label="Comparaisons">
       <table className="table">
@@ -770,7 +778,7 @@ function Runs({ runs }: { runs: ComparisonRun[] }) {
         <tbody>
           {runs.map((run) => (
             <tr key={run.id}>
-              <th scope="row">{run.id}</th>
+              <th scope="row">{run.status === "done" ? <a href={href.view(ws.id, "comparaison", { kpi, id: String(run.id), variant: run.results[0]?.entity ?? "" })}>{run.id}</a> : run.id}</th>
               <td>{ago(run.finished_at ?? run.started_at)}</td>
               <td>v{run.kpi_version}</td>
               <td>{RUN_STATUS[run.status] ?? run.status}</td>
