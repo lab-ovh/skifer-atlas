@@ -26,6 +26,7 @@ async function open(page: Page, request: APIRequestContext) {
 test("[S-UI-106-12] WebKit : « Ajouter un point d'accès » au clavier amène le focus sur la plateforme ; les listes natives recalculent l'identifiant", async ({ page, request }) => {
   await open(page, request);
   const add = page.getByRole("button", { name: "Ajouter un point d'accès" });
+  await expect(add).toBeEnabled(); // désactivé tant que la liste des points d'accès n'est pas chargée
   await add.focus();
   await page.keyboard.press("Enter");
   const form = panel(page);

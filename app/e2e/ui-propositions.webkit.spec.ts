@@ -102,8 +102,10 @@ test("[S-UI-104-19] WebKit : commenter et demander des changements au clavier", 
   await joinAs(request, CLAIRE, ws.remote);
   await relay(page, CLAIRE);
   await page.goto(`${ws.root}/propositions?n=5`);
-  const thread = selection(page).getByRole("region", { name: "Commentaires" });
-  await expect(thread.getByRole("listitem")).toHaveCount(1);
+  // Le fil (ADR 0056) porte aussi la révision 1, le commit de création : seuls les échanges sont comptés.
+  const thread = selection(page).getByRole("region", { name: "Fil de la proposition" });
+  const exchanges = thread.getByRole("listitem").filter({ hasNotText: "a envoyé la révision" });
+  await expect(exchanges).toHaveCount(1);
 
   const reply = thread.getByLabel("Répondre");
   await tabTo(page, reply, 80);
@@ -111,8 +113,8 @@ test("[S-UI-104-19] WebKit : commenter et demander des changements au clavier", 
   await page.keyboard.press(NEXT);
   await expect(thread.getByRole("button", { name: "Envoyer", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(thread.getByRole("listitem")).toHaveCount(2);
-  await expect(thread.getByRole("listitem").filter({ hasText: "Vu, à reprendre en comité." })).toContainText("Claire M.");
+  await expect(exchanges).toHaveCount(2);
+  await expect(exchanges.filter({ hasText: "Vu, à reprendre en comité." })).toContainText("Claire M.");
   await expect(reply).toHaveValue("");
 
   const ask = selection(page).getByRole("button", { name: "Demander des changements" });
@@ -126,7 +128,7 @@ test("[S-UI-104-19] WebKit : commenter et demander des changements au clavier", 
   await expect(form.getByRole("button", { name: "Envoyer la demande" })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(form).toHaveCount(0);
-  await expect(thread.getByRole("listitem").filter({ hasText: "Garder le fuseau Europe/Paris." })).toContainText("Claire M. demande des changements");
+  await expect(exchanges.filter({ hasText: "Garder le fuseau Europe/Paris." })).toContainText("Claire M. demande des changements");
 });
 
 test("[S-UI-104-20] WebKit : détail des champs d'un écart au clavier, défilement lié des deux graphes", async ({ page, request }) => {
