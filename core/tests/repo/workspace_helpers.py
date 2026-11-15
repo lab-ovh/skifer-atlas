@@ -13,7 +13,11 @@ from pathlib import Path
 
 import pytest
 
-EXAMPLE = Path(__file__).parents[3] / "examples" / "espace-nordis"
+EXAMPLE = next(
+    parent / "examples" / "espace-nordis"
+    for parent in Path(__file__).resolve().parents
+    if (parent / "examples" / "espace-nordis").is_dir()
+)
 USER = "julien.h"
 
 
