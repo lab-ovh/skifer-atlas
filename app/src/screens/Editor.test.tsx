@@ -968,6 +968,20 @@ describe("nouveau document : type, domaine et échecs", () => {
     window.location.hash = "#/w/groupe-nordis/editeur";
   });
 
+  it.each([
+    ["", "Aucun domaine. Rattachez un dépôt distant puis créez un domaine dans l'Administration."],
+    ["https://example.com/repo", "Aucun domaine. Un référent crée les domaines dans l'Administration."],
+  ])("explique l'absence de domaine (dépôt : %s)", async (remote, message) => {
+    const { calls } = fakeServer(() => undefined);
+    render(<Harness ws={workspace({ domains: [], git_remote: remote })} />);
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Administration" })).toHaveAttribute("href", "#/w/groupe-nordis/administration");
+    expect(screen.queryByRole("combobox", { name: /^Domaine/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Créer et ouvrir l'éditeur" }));
+    expect(screen.getByText("Aucun domaine disponible : créez d'abord un domaine dans l'Administration.")).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  });
+
   it("crée un concept : le type choisi part au serveur", async () => {
     const { calls } = fakeServer((call) => call.path === `${EDITOR}/documents` ? { status: 201, json: {} } : undefined);
     editor();

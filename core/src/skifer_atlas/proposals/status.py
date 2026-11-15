@@ -19,6 +19,7 @@ from ..model.resolve import ResolvedGraph, resolve
 from ..repo.git import RepoError, run_git
 from ..repo.layout import document_path
 from ..repo.versions import document_at
+from ..workspaces import get_workspace
 from .common import Context, open_context, parse_body, review_domain
 from .current import current_block
 
@@ -177,6 +178,9 @@ def list_proposals(workspace_id: str, domain: str | None = None, kpi: str | None
     """Propositions créées par Atlas ; celles des domaines de l'utilisateur d'abord.
     `for_me` : seulement celles qui attendent ma revue. `fetch=False` lit l'état connu du
     clone, sans réseau côté Git."""
+    workspace = get_workspace(workspace_id)
+    if workspace is not None and not workspace.git_remote:
+        return []
     context = open_context(workspace_id, fetch=fetch)
     pulls = context.host.list_pull_requests("open" if for_me else status or "all")
     items = [describe(context, pull) for pull in pulls]

@@ -7,20 +7,66 @@ import threading
 import time
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 from workspace_helpers import EXAMPLE, atlas_env
 
 from skifer_atlas.api.app import create_app
 from skifer_atlas.proposals import common as proposals_common
 from skifer_atlas.proposals import merge as proposals_merge
+from skifer_atlas.proposals.status import list_proposals
+from skifer_atlas.proposals.view import queue
 from skifer_atlas.repo import RepoError
 from skifer_atlas.repo import sync as repo_sync
+from skifer_atlas.repo.layout import WorkspaceMeta
+from skifer_atlas.workspaces import repo_dir
 
 __all__ = ["atlas_env"]  # fixture importée
 
 AUTH = {"Authorization": "Bearer secret"}
 API = "/api/workspaces/groupe-nordis"
 EXAMPLES = EXAMPLE.parent
+
+
+def test_local_proposals_use_clone_governance_without_host(atlas_env, monkeypatch):
+    workspace = repo_sync.create_workspace(WorkspaceMeta(id="local", name="Local", entities=["fr"]))
+    path = repo_dir("local") / "governance.yaml"
+    governance = yaml.safe_load(path.read_text(encoding="utf-8"))
+    governance["members"][0]["roles"] = [{"role": "lecteur", "domains": []}]
+    governance["members"][0]["entity"] = "de"
+    governance["members"].append({"account": "autre", "name": "Autre",
+                                  "roles": [{"role": "referent", "domains": []}]})
+    governance["domains"] = [{"id": "finance", "label": "Finance",
+                              "validators": [workspace.account]}]
+    path.write_text(yaml.safe_dump(governance, allow_unicode=True), encoding="utf-8")
+
+    def no_host(*args, **kwargs):
+        pytest.fail("Un espace local ne doit pas contacter d'hébergeur")
+
+    monkeypatch.setattr(proposals_common, "host_for", no_host)
+    assert list_proposals("local", for_me=True) == []
+    assert queue("local") == {
+        "account": workspace.account, "role": "validateur", "review_domains": ["finance"],
+        "domains": [{"id": "finance", "label": "Finance"}], "entities": ["de", "fr"],
+        "members": {workspace.account: governance["members"][0]["name"], "autre": "Autre"},
+        "items": [],
+    }
+
+
+@pytest.mark.parametrize("path", ["?status=open&for_me=true", "/queue?status=open"])
+def test_local_workspace_has_no_proposals(atlas_env, path):
+    client = TestClient(create_app(token="secret"), headers=AUTH)
+    created = client.post("/api/workspaces", json={"id": "local", "name": "Local",
+                                                   "entities": ["fr"]})
+    assert created.status_code == 201
+    response = client.get(f"/api/workspaces/local/proposals{path}")
+    assert response.status_code == 200, response.text
+    if path.startswith("/queue"):
+        assert response.json()["items"] == []
+        assert response.json()["entities"] == ["fr"]
+        assert response.json()["domains"] == []
+    else:
+        assert response.json() == []
 
 
 @pytest.fixture
