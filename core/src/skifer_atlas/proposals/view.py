@@ -10,14 +10,23 @@ from __future__ import annotations
 from typing import Any
 
 from ..diff import DiffContext, diff
-from ..governance.model import ROLE_RANK, domain_approvers, domain_referents, space_referents
+from ..governance.model import (
+    ROLE_RANK,
+    Governance,
+    domain_approvers,
+    domain_referents,
+    role_of,
+    space_referents,
+)
 from ..governance.rules import requirement
 from ..index.build import Analysis, analyze
 from ..model.io import validate_text
 from ..model.resolve import ResolvedGraph, resolve
 from ..repo import versions as repo_versions
 from ..repo.git import RepoError
+from ..repo.layout import read_governance
 from ..sheet import labelled_layout, resolved_graph
+from ..workspaces import Workspace, get_workspace, repo_dir
 from .common import Context, open_context, parse_body, review_domain
 from .current import current_block
 from .status import list_proposals
@@ -26,16 +35,25 @@ from .status import list_proposals
 def queue(workspace_id: str, status: str = "open") -> dict:
     """La file et ses filtres : domaines où le compte valide (« Mes domaines »), libellés
     des domaines, entités et noms des membres."""
+    workspace = get_workspace(workspace_id)
+    if workspace is not None and not workspace.git_remote:
+        governance = read_governance(repo_dir(workspace.id))
+        if governance is None:
+            raise RepoError("invalid_governance", "La gouvernance locale est absente ou invalide.")
+        return _queue(workspace, governance, workspace.account, [])
     items = list_proposals(workspace_id, status=status)
     context = open_context(workspace_id, fetch=False)
-    governance = context.governance
+    return _queue(context.workspace, context.governance, context.account, items)
+
+
+def _queue(workspace: Workspace, governance: Governance, account: str, items: list[dict]) -> dict:
     reviewing = sorted(d.id for d in governance.domains
-                       if context.account in domain_approvers(governance, d.id))
+                       if account in domain_approvers(governance, d.id))
     entities = sorted({m.entity for m in governance.members if m.entity}
-                      | set(context.workspace.entities)
+                      | set(workspace.entities)
                       | {i["entity"] for i in items if i.get("entity")})
     return {
-        "account": context.account, "role": context.role(), "review_domains": reviewing,
+        "account": account, "role": role_of(governance, account), "review_domains": reviewing,
         "domains": [{"id": d.id, "label": d.label} for d in governance.domains],
         "entities": entities,
         "members": {m.account: m.name for m in governance.members},

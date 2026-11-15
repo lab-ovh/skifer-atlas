@@ -161,6 +161,7 @@ export function WorkspaceShell({
   useEffect(() => {
     let alive = true;
     setWaiting(0);
+    if (load.kind !== "ready" || load.ws.id !== wsId || !load.ws.git_remote) return;
     // Masqué tant qu'on ne sait pas, et si l'hébergeur ne répond pas. Relu après une
     // revue ou une fusion depuis l'écran des propositions.
     const refresh = () =>
@@ -174,7 +175,7 @@ export function WorkspaceShell({
       alive = false;
       window.removeEventListener(PROPOSALS_CHANGED, refresh);
     };
-  }, [wsId]);
+  }, [wsId, load.kind, load.kind === "ready" ? load.ws.git_remote : null]);
 
   const ws = load.kind === "ready" ? load.ws : null;
   const conflict = explain(new ApiError(409, "sync_conflict", ""));

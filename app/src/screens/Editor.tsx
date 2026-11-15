@@ -228,7 +228,9 @@ function NewDocument({ ws, heading }: { ws: Workspace; heading: RefObject<HTMLHe
     const found: Record<string, string> = {};
     if (!label.trim()) found.label = "Donner un libellé.";
     if (!/^[a-z0-9][a-z0-9-]{1,63}(?![\s\S])/.test(slug) || slug.includes("--")) found.id = "De 2 à 64 caractères : minuscules, chiffres et tirets, en commençant par une lettre ou un chiffre, sans double tiret.";
-    if (!domain) found.domain = "Choisir un domaine.";
+    if (!domain || !ws.domains.includes(domain)) found.domain = ws.domains.length
+      ? "Choisir un domaine."
+      : "Aucun domaine disponible : créez d'abord un domaine dans l'Administration.";
     if (!owner.trim()) found.owner = "Indiquer le propriétaire.";
     setErrors(found);
     setFailure(null);
@@ -306,17 +308,22 @@ function NewDocument({ ws, heading }: { ws: Workspace; heading: RefObject<HTMLHe
             </div>
           ))}
           <div className="field">
-            <label htmlFor={ids.domain}>
+            <label htmlFor={ws.domains.length ? ids.domain : undefined}>
               Domaine<span className="required"> requis</span>
             </label>
-            <Select id={ids.domain} value={domain} aria-describedby={describe("domain")} onChange={(event) => setDomain(event.target.value)}>
+            {ws.domains.length ? <Select id={ids.domain} value={domain} aria-describedby={describe("domain")} onChange={(event) => setDomain(event.target.value)}>
               <option value="">Choisir…</option>
               {ws.domains.map((d) => (
                 <option key={d} value={d}>
                   {d}
                 </option>
               ))}
-            </Select>
+            </Select> : <>
+              <span className="field-hint">{ws.git_remote
+                ? "Aucun domaine. Un référent crée les domaines dans l'Administration."
+                : "Aucun domaine. Rattachez un dépôt distant puis créez un domaine dans l'Administration."}</span>
+              <a href={href.view(ws.id, "administration")}>Administration</a>
+            </>}
             {errors.domain && (
               <span id={`${ids.domain}-error`} className="field-error">
                 {errors.domain}

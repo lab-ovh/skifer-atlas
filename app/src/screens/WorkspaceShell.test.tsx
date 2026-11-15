@@ -11,6 +11,18 @@ vi.mock("./Proposals", () => ({ PROPOSALS_CHANGED: "proposals-changed", Proposal
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("un espace local ne relance pas la recherche de propositions", async () => {
+  const server = fakeServer(({ path }) => path === "/api/workspaces/groupe-nordis"
+    ? { json: workspace({ git_remote: "", domains: [] }) }
+    : path.includes("proposals") ? { status: 422, json: { detail: "Erreur" } } : undefined);
+  render(<WorkspaceShell wsId="groupe-nordis" view="administration" onUnknown={vi.fn()} />);
+  await screen.findByRole("heading", { name: "Administration" });
+  await act(async () => { window.dispatchEvent(new Event("proposals-changed")); });
+  expect(server.calls.filter((call) => call.path.includes("/proposals"))).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "Rattacher" }));
+  await waitFor(() => expect(server.calls.filter((call) => call.path.includes("/proposals"))).toHaveLength(1));
+});
+
 it("change d'espace sans conserver les suggestions ni la saisie du précédent", async () => {
   fakeServer(({ path }) => {
     if (path === "/api/workspaces/groupe-nordis") return { json: workspace() };
