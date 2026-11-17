@@ -77,7 +77,49 @@ def test_missing_dataset_stops_before_any_run(space, rest_workspace, change):
             variants=["exemple"], scope_id="total", access_points={"exemple": "api-exemple"}), wait=True)
     assert caught.value.code == {"columns": "rest_dataset_mismatch", "window": "rest_period_required"
                                 }.get(change, "rest_dataset_missing")
+    if change in ("missing", "other_point"):
+        assert caught.value.message == ("Jeu de données déclaré sur un autre point REST."
+            if change == "other_point" else "Table sans jeu de données sur ce point REST.")
     assert not store.history(index_path("exemple")) and not rest_workspace.requests
+
+
+@pytest.mark.parametrize("order", [["n01", "n04"], ["n04", "n01"]])
+def test_same_table_different_perimeters_refused_before_run(space, rest_workspace, order):
+    from copy import deepcopy
+
+    path = space / "kpis/cours-total.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    nodes = raw["graph"]["nodes"]
+    nodes[0].update(concept="titre", binding={"symbol": "symbol"})
+    unbound = deepcopy(nodes[0])
+    unbound["id"] = "n04"
+    del unbound["concept"], unbound["binding"]
+    union = {"id": "n05", "type": "union", "inputs": order, "mode": "all",
+             "columns": [{"name": name, "from": {"n01": name, "n04": name}}
+                         for name in ("trade_date", "symbol", "close")]}
+    nodes[1]["inputs"] = ["n05"]
+    raw["graph"]["nodes"] = [nodes[0], unbound, union, *nodes[1:]]
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    (space / "concepts").mkdir()
+    (space / "concepts/titre.yaml").write_text(yaml.safe_dump({
+        "schema_version": 1, "kind": "concept", "data_product": {"id": "titre",
+        "version": 1, "owner": "exemple.owner", "domain": "finance"}, "label": "Titre",
+        "entity": {"key": ["symbol"], "attributes": [{"name": "symbol", "type": "string"}]}
+    }), encoding="utf-8")
+    request = CompareRequest(kpi_id="cours-total", variants=["exemple"], scope={
+        "period": {"from": "2026-01-01", "to": "2026-01-31"},
+        "perimeter": ["symbol:in:EX"]})
+    from skifer_atlas.index.build import analyze
+
+    assert not [i for i in analyze(space).entry("cours-total").issues if i.severity == "error"]
+    with pytest.raises(RepoError) as caught:
+        service.start_comparison("exemple", request, wait=True)
+    assert caught.value.code == "rest_perimeter_conflict", caught.value.details
+    from skifer_atlas.api.app import ERROR_STATUS
+
+    assert ERROR_STATUS[caught.value.code] == 422
+    assert not store.history(index_path("exemple")) and not rest_workspace.requests
+    assert service.prepare_in(space, request, "exemple", True).plans
 
 
 def test_malformed_file_only_matters_for_rest_plans(space, rest_workspace):

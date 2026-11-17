@@ -265,10 +265,22 @@ texte indique les appels, octets, cache et source de clé ; JSON ajoute `rest` s
 modifier le résultat de l'API. Les fichiers locaux (`--duckdb-data` ou
 `ATLAS_COMPARE_DATA`) gardent la priorité et ne déclenchent aucun appel REST.
 
+**Changement de comportement (plan 0036, F3)** : la CLI lit désormais
+`ATLAS_COMPARE_DATA` pour tous les espaces, même sans point REST. Une variable
+restée définie remplace donc aussi une exécution distante historique par les
+fichiers locaux ; la retirer pour revenir aux points d'accès. `--duckdb-data`
+reste prioritaire sur cette variable.
+
 Le cache Parquet et ses métadonnées sont dans les données personnelles de l'espace,
 jamais dans son clone : fenêtres passées immuables, fenêtre courante ou jeu sans
-fenêtre provisoire pendant 15 minutes. `--refresh` refait chaque clé une seule fois
+fenêtre provisoire pendant 15 minutes. Une entrée encore provisoire est relue
+une fois après la clôture UTC de sa fenêtre, même si les 15 minutes ne sont pas
+écoulées ; seule cette réponse finale devient immuable (F1). `--refresh` refait chaque clé une seule fois
 par comparaison. Il n'y a pas de purge automatique dans ce plan.
+
+Deux sources d'une même table portant des périmètres distincts sont refusées
+avant l'exécution REST (`rest_perimeter_conflict`, F2), sans appel ni historique
+de comparaison. Le chargement d'une union de périmètres est hors de ce plan.
 
 Les budgets refusent avant chaque page ou nouvel essai, sans attendre. Le budget
 d'appels glisse sur 60 secondes, par processus ; celui d'octets porte sur le jour UTC.

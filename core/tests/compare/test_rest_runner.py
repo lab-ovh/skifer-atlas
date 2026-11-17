@@ -77,17 +77,24 @@ def test_immutable_window_served_from_cache(space, setup_rest):
     assert len(server.requests) == 1 and later.report()[0]["cache"] == "immutable"
 
 
-def test_window_becomes_immutable_after_utc_midnight(space, setup_rest):
+@pytest.mark.parametrize("hour,minute", [(12, 0), (23, 58)])
+def test_window_becomes_immutable_after_utc_midnight(space, setup_rest, hour, minute):
     server, ds, compiled, plan = setup_rest
     ds["window"] = {"from_param": "from", "to_param": "to"}
     save_dataset(space, ds)
     compiled.window = (date(2026, 1, 1), date(2026, 1, 2))
-    now = datetime(2026, 1, 2, 23, 30, tzinfo=UTC)
-    RestRunner("exemple", now=lambda: now)(plan, compiled, threading.Event())
-    now += timedelta(hours=2)
+    now = datetime(2026, 1, 2, hour, minute, tzinfo=UTC)
+    assert RestRunner("exemple", now=lambda: now)(plan, compiled, threading.Event()).rows == [(10.0,)]
+    server.rows[0]["c"] = 99.0
+    now = datetime(2026, 1, 3, 0, 1, tzinfo=UTC)
     runner = RestRunner("exemple", now=lambda: now)
-    runner(plan, compiled, threading.Event())
-    assert len(server.requests) == 1 and runner.report()[0]["cache"] == "immutable"
+    assert runner(plan, compiled, threading.Event()).rows == [(99.0,)]
+    assert len(server.requests) == 2
+    server.rows[0]["c"] = 7.0
+    now = datetime(2026, 2, 3, tzinfo=UTC)
+    later = RestRunner("exemple", now=lambda: now)
+    assert later(plan, compiled, threading.Event()).rows == [(99.0,)]
+    assert len(server.requests) == 2 and later.report()[0]["cache"] == "immutable"
 
 
 def test_dataset_without_window_remains_provisional(setup_rest):

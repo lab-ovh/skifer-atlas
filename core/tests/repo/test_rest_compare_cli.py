@@ -96,6 +96,34 @@ def test_rest_usage_command(rest_workspace, capsys):
     assert row["calls"] == 1 and row["cache_hits"] == 1 and row["bytes"] > 0
 
 
+def test_compare_vault_unavailable_prints_rest_key_hint(rest_workspace, monkeypatch, capsys):
+    from skifer_atlas.repo.git import RepoError
+    from skifer_atlas.vault import keyring_vault
+
+    def unavailable():
+        raise RepoError("vault_unavailable", "Sans trousseau.")
+
+    monkeypatch.setattr(keyring_vault, "system_keyring", unavailable)
+    monkeypatch.delenv("ATLAS_VAULT", raising=False)
+    monkeypatch.delenv("ATLAS_REST_KEY_API_EXEMPLE", raising=False)
+    assert main(ARGS) == 1
+    output = capsys.readouterr()
+    assert "vault_unavailable" in output.err
+    assert "ATLAS_REST_KEY_API_EXEMPLE" in output.err
+    assert not rest_workspace.requests
+
+
+def test_rest_key_unknown_point_never_echoes_argument(rest_workspace, monkeypatch, capsys):
+    import secrets
+
+    sentinel = secrets.token_urlsafe(24)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(rest_workspace.key))
+    assert main(["rest-key", "exemple", sentinel]) == 1
+    output = capsys.readouterr()
+    assert "not_found" in output.err
+    assert sentinel not in output.out + output.err
+
+
 def test_local_data_wins_over_rest_point(space, rest_workspace, tmp_path, capsys):
     data = tmp_path / "local"
     data.mkdir()
@@ -104,6 +132,28 @@ def test_local_data_wins_over_rest_point(space, rest_workspace, tmp_path, capsys
     assert main(ARGS + ["--duckdb-data", str(data)]) == 0
     output = capsys.readouterr()
     assert "ne sont pas appelés" in output.err and not rest_workspace.requests
+
+
+@pytest.mark.parametrize("rest_declared", [True, False])
+def test_compare_environment_data_applies_to_all_workspaces(
+        space, rest_workspace, tmp_path, monkeypatch, capsys, rest_declared):
+    data = tmp_path / "local-env"
+    data.mkdir()
+    (data / "marche.prix.cours_jour.csv").write_text(
+        "trade_date,symbol,close\n2026-01-02,EX,10\n", encoding="utf-8")
+    if not rest_declared:
+        from test_rest_access_points import legacy
+
+        (space / "rest_access_points.yaml").unlink()
+        platform = yaml.safe_load(legacy(space))["access_points"][0]["platform"]
+        path = space / "kpis/cours-total.yaml"
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw["graph"]["nodes"][0]["platform"] = platform
+        path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    monkeypatch.setenv("ATLAS_COMPARE_DATA", str(data))
+    assert main(ARGS) == 0
+    assert not rest_workspace.requests
+    capsys.readouterr()
 
 
 def test_invalid_rest_file_diagnostic(space, rest_workspace, capsys):

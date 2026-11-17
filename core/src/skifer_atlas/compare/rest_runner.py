@@ -120,9 +120,10 @@ class RestRunner:
         definitions = datasets(self.workspace_id)
         pending = []
         for source in compiled.sources:
-            ds = definitions.get(source.table, point.id)
-            if ds is None:
-                raise RepoError("rest_dataset_missing", "Table sans jeu de données sur ce point REST.")
+            if source.perimeter_conflict:
+                raise RepoError("rest_perimeter_conflict",
+                                "Périmètres distincts pour une même table REST.")
+            ds = definitions.require(source.table, point.id)
             pending.append((source, ds, parameters(ds, source, compiled.window)))
         key = http.ApiKey(value, point.key_in, point.key_name, point.key_prefix or "")
         budget = RestBudget(self.workspace_id, point, self.now)

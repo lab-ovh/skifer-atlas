@@ -14,7 +14,7 @@ donnent le même SQL, à l'octet près.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -58,6 +58,7 @@ class SourceTable:
     table: str
     columns: tuple[tuple[str, str | None], ...]  # (nom, type ; None si à compléter)
     perimeter: tuple[str, ...] = ()
+    perimeter_conflict: bool = False
 
 
 @dataclass
@@ -315,9 +316,12 @@ class _Unit:
     def _source(self, node: Any) -> exp.Select:
         # Source rebranchée (plan 0009) : colonne du graphe → colonne de la table.
         physical = self.builder.renames.get(node.id, {}) if not self.prefix else {}
-        self.builder.sources.setdefault(node.table, SourceTable(node.table, tuple(
+        source = SourceTable(node.table, tuple(
             (physical.get(c.name, c.name), None if c.type == TODO else c.type)
-            for c in node.columns), tuple(perimeter_filters(self.view, self.scope).get(node.id, ()))))
+            for c in node.columns), tuple(perimeter_filters(self.view, self.scope).get(node.id, ())))
+        previous = self.builder.sources.setdefault(node.table, source)
+        if previous.perimeter != source.perimeter:
+            self.builder.sources[node.table] = replace(previous, perimeter_conflict=True)
         items = []
         for c in node.columns:
             column = exp.column(physical.get(c.name, c.name))

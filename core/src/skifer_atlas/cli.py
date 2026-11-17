@@ -451,6 +451,7 @@ def _compare(args: argparse.Namespace) -> int:
     local = Path(args.duckdb_data) if args.duckdb_data else service.local_data()
     workspace = get_workspace(args.workspace)
     folder = Path(args.workspace)
+    prepared = None
     with tempfile.TemporaryDirectory() as scratch:
         try:
             request = _compare_request(args)
@@ -481,6 +482,12 @@ def _compare(args: argparse.Namespace) -> int:
                 found["rest"] = runner.report()
         except RepoError as error:
             print(f"{error.code} : {error.message}", file=sys.stderr)
+            if error.code == "vault_unavailable" and workspace is not None and prepared is not None:
+                used = {plan.access_point for plan in prepared.plans}
+                for point in connections.registry(workspace.id).access_points:
+                    if point.id in used and point.platform == "rest":
+                        print("Sans trousseau : variable " + connections.rest_key_variable(point.id),
+                              file=sys.stderr)
             for issue in error.details or []:
                 print(f"  {issue}", file=sys.stderr)
             return 1
@@ -518,7 +525,8 @@ def _rest_key(args: argparse.Namespace) -> int:
     try:
         connections.store_api_key(args.workspace, args.point, key)
     except RepoError as error:
-        print(f"{error.code} : {error.message}", file=sys.stderr)
+        message = "Point d'accès inconnu." if error.code == "not_found" else error.message
+        print(f"{error.code} : {message}", file=sys.stderr)
         if error.code == "vault_unavailable":
             print("Sans trousseau : variable " + connections.rest_key_variable(args.point),
                   file=sys.stderr)

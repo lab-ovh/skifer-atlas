@@ -31,10 +31,8 @@ def cached(workspace_id, key, now, *, immutable=False):
     parquet, metadata = paths(workspace_id, key)
     try:
         data = json.loads(metadata.read_text(encoding="utf-8"))
-        if parquet.is_file() and (immutable or not data["provisional"] or
+        if parquet.is_file() and (not data["provisional"] or not immutable and
                 (now - datetime.fromisoformat(data["date"])).total_seconds() < 900):
-            if immutable:
-                data["provisional"] = False
             return parquet, data
     except (OSError, ValueError, KeyError, TypeError):
         pass

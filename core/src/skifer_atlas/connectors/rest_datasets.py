@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from ..model.errors import Issue, issues_from_validation_error
 from ..model.nodes import TABLE_PATTERN, ColumnType
+from ..repo.git import RepoError
 from .rest_access_points import PATH_PATTERN, RestAccessPoint
 
 FILE = "rest_datasets.yaml"
@@ -83,6 +84,15 @@ class RestDatasets(_Model):
     def get(self, table: str, access_point: str) -> RestDataset | None:
         return next((d for d in self.datasets
                      if d.table == table and d.access_point == access_point), None)
+
+    def require(self, table: str, access_point: str) -> RestDataset:
+        found = self.get(table, access_point)
+        if found is None:
+            message = ("Jeu de données déclaré sur un autre point REST."
+                if any(d.table == table for d in self.datasets)
+                else "Table sans jeu de données sur ce point REST.")
+            raise RepoError("rest_dataset_missing", message)
+        return found
 
 
 def parse_rest_datasets(text: str, points: list[RestAccessPoint], *, legacy_ids=()

@@ -91,9 +91,10 @@ def prepare_in(root: Path, request: CompareRequest, workspace_id: str | None,
         for plan in rest_plans:
             for side in (plan.canonical, plan.variant):
                 for source in side.compiled.sources:
-                    ds = declared.get(source.table, plan.access_point)
-                    if ds is None:
-                        raise RepoError("rest_dataset_missing", "Table sans jeu de données sur ce point REST.")
+                    if source.perimeter_conflict:
+                        raise RepoError("rest_perimeter_conflict",
+                                        "Périmètres distincts pour une même table REST.")
+                    ds = declared.require(source.table, plan.access_point)
                     columns = {c.name: c.type for c in ds.columns}
                     if any(n not in columns or t is not None and not compatible(t, columns[n])
                            for n, t in source.columns):

@@ -8,6 +8,7 @@ REST_ERRORS = {
     "rest_period_required": (422, "Une période est requise pour ce jeu REST."),
     "rest_scope_required": (422, "Un périmètre non vide est requis avant tout appel REST."),
     "rest_perimeter_unsupported": (422, "Opérateur de périmètre REST non pris en charge."),
+    "rest_perimeter_conflict": (422, "Périmètres distincts pour une même table REST."),
     "budget_exceeded": (429, "Budget REST atteint."),
     "rate_limited": (429, "Limite d'appels du fournisseur REST atteinte."),
     "rest_payment_required": (502, "Appel REST hors forfait."),
