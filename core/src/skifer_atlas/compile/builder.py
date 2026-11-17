@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 import sqlglot
@@ -56,6 +57,7 @@ _JOINS = {"inner": "inner", "left": "left", "right": "right", "full": "full", "c
 class SourceTable:
     table: str
     columns: tuple[tuple[str, str | None], ...]  # (nom, type ; None si à compléter)
+    perimeter: tuple[str, ...] = ()
 
 
 @dataclass
@@ -65,6 +67,7 @@ class Compiled:
     checked: list[str] = field(default_factory=list)  # jointures contrôlées
     bypassed: list[str] = field(default_factory=list)
     sources: list[SourceTable] = field(default_factory=list)
+    window: tuple[date, date] | None = None
 
 
 @dataclass
@@ -92,6 +95,7 @@ class _Builder:
         self.sources: dict[str, SourceTable] = {}
         self.references: dict[tuple[str, int], _Output] = {}
         self.calendar_ctes: dict[tuple[str, str], str] = {}
+        self.window = None
 
     def add(self, name: str, query: exp.Expression) -> None:
         self.ctes.append((name, query))
@@ -253,6 +257,8 @@ class _Unit:
         calendar = self._calendar(node_id)
         key = self.document.semantics.calendar.key
         self.bounds = period_bounds(self.scope, calendar, key)
+        if not self.prefix:
+            self.builder.window = self.bounds
 
     def _calendar(self, node_id: str) -> Calendar | None:
         semantics = getattr(self.document, "semantics", None)
@@ -311,7 +317,7 @@ class _Unit:
         physical = self.builder.renames.get(node.id, {}) if not self.prefix else {}
         self.builder.sources.setdefault(node.table, SourceTable(node.table, tuple(
             (physical.get(c.name, c.name), None if c.type == TODO else c.type)
-            for c in node.columns)))
+            for c in node.columns), tuple(perimeter_filters(self.view, self.scope).get(node.id, ()))))
         items = []
         for c in node.columns:
             column = exp.column(physical.get(c.name, c.name))
@@ -616,7 +622,7 @@ def compile_document(document: Any, dialect: str, scope: Scope | None = None,
         query = query.with_(name, as_=cte, copy=False)
     sql = query.sql(dialect=dialect, pretty=True)
     return Compiled(dialect, _header(document, dialect, builder) + sql + "\n",
-                    builder.checked, builder.bypassed, list(builder.sources.values()))
+                    builder.checked, builder.bypassed, list(builder.sources.values()), builder.window)
 
 
 def compilability(document: Any, library: Library | None = None,
