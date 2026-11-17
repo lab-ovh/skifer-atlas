@@ -1,8 +1,9 @@
 """Mes connexions dans un espace : points d'accès, coffre, OAuth, test, requête (plan 0008).
 
 Le registre des points d'accès se lit dans le clone de l'espace ; les identifiants de
-l'utilisateur, dans son coffre, sous `<espace>/<point d'accès>`. Aucune fonction de ce
-module ne rend un jeton : seulement des états (`connected`, `expired`, `never`).
+l'utilisateur, dans son coffre, sous `<espace>/<point d'accès>`. L'API ne rend que des
+états (`connected`, `expired`, `never`) ; `rest_key` est la seule lecture interne de
+clé REST, pour le runner, jamais une route d'API (plan 0036, ADR 0053).
 
 Snowflake (plan 0018) : SSO par le navigateur ou paire de clés, selon le point d'accès.
 L'identifiant Snowflake de l'utilisateur et le chemin de sa clé privée vont dans son
@@ -106,7 +107,7 @@ def _names(workspace_id: str) -> dict[str, str]:
     return {m.account: m.name for m in governance.members} if governance else {}
 
 
-def access_point(workspace_id: str, access_point_id: str) -> AccessPoint:
+def access_point(workspace_id: str, access_point_id: str) -> AccessPoint | RestAccessPoint:
     registered = registry(workspace_id)
     point = registered.get(access_point_id)
     if point is None:
