@@ -9,6 +9,7 @@ from datetime import datetime
 import duckdb
 
 from ..paths import workspace_dir
+from ..repo.git import RepoError
 
 SQL_TYPES = {"string": "VARCHAR", "integer": "BIGINT", "double": "DOUBLE",
              "decimal": "DECIMAL(38,10)", "boolean": "BOOLEAN", "date": "DATE",
@@ -46,13 +47,17 @@ def write(workspace_id, key, columns, rows, metadata):
         from pathlib import Path
 
         target = Path(temporary) / "data.parquet"
-        with duckdb.connect(":memory:") as connection:
-            fields = ", ".join('"' + c.name + '" ' + SQL_TYPES[c.type] for c in columns)
-            connection.execute("CREATE TABLE data (" + fields + ")")
-            if rows:
-                connection.executemany("INSERT INTO data VALUES (" +
-                    ",".join("?" for _ in columns) + ")", rows)
-            connection.execute("COPY data TO ? (FORMAT PARQUET)", [str(target)])
+        try:
+            with duckdb.connect(":memory:") as connection:
+                fields = ", ".join('"' + c.name + '" ' + SQL_TYPES[c.type] for c in columns)
+                connection.execute("CREATE TABLE data (" + fields + ")")
+                if rows:
+                    connection.executemany("INSERT INTO data VALUES (" +
+                        ",".join("?" for _ in columns) + ")", rows)
+                connection.execute("COPY data TO ? (FORMAT PARQUET)", [str(target)])
+        except duckdb.Error:
+            # Le diagnostic DuckDB peut citer la valeur brute de la réponse.
+            raise RepoError("rest_bad_response", "Données REST impossibles à charger.") from None
         meta = Path(temporary) / "data.json"
         meta.write_text(json.dumps(metadata), encoding="utf-8")
         os.replace(target, parquet)

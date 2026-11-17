@@ -126,7 +126,7 @@ def test_compile_transmits_window_and_perimeter(space, real_rest_workspace):
         assert side.compiled.sources[0].perimeter == ("symbol:in:EX",)
 
 
-@pytest.mark.parametrize("mode", ["bad_rows", "bad_column", "foreign", "path_escape", "encoded", "pages"])
+@pytest.mark.parametrize("mode", ["bad_rows", "bad_column", "integer_overflow", "foreign", "path_escape", "encoded", "pages"])
 def test_rest_response_refusals(space, setup_rest, mode):
     server, ds, compiled, plan = setup_rest
     expected = "rest_bad_response"
@@ -134,6 +134,11 @@ def test_rest_response_refusals(space, setup_rest, mode):
         server.replies = [(200, {"not_rows": True}, {})]
     elif mode == "bad_column":
         server.rows = [{"c": "not-a-number"}]
+    elif mode == "integer_overflow":
+        ds["columns"][0]["type"] = "integer"
+        compiled.sources = [SourceTable(ds["table"], (("close", "integer"),))]
+        save_dataset(space, ds)
+        server.rows = [{"c": 10**100}]
     else:
         ds.update(rows_path="results", pagination={"kind": "next_url", "max_pages": 1 if mode == "pages" else 2})
         if mode == "pages":
@@ -152,6 +157,7 @@ def test_rest_response_refusals(space, setup_rest, mode):
     with pytest.raises(RepoError) as caught:
         RestRunner("exemple")(plan, compiled, threading.Event())
     assert caught.value.code == expected and len(server.requests) == 1
+    assert str(10**100) not in str(caught.value)
 
 
 def test_cancelled_rest_never_calls_server(setup_rest):
