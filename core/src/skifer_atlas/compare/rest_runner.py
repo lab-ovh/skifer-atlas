@@ -147,9 +147,13 @@ class RestRunner:
                     else:
                         rows, count, size = self._fetch(point, ds, params, perimeter, key, budget, cancel)
                         provisional = not immutable
-                        path = rest_cache.write(self.workspace_id, identity, ds.columns, rows, {
-                            "date": self.now().isoformat(), "provisional": provisional,
-                            "calls": count, "bytes": size})
+                        try:
+                            path = rest_cache.write(self.workspace_id, identity, ds.columns, rows, {
+                                "date": self.now().isoformat(), "provisional": provisional,
+                                "calls": count, "bytes": size})
+                        except RepoError:
+                            budget.record(ds.table, errors=1)
+                            raise
                         self.refreshed.add(identity)
                         report["calls"] += count
                         report["bytes"] += size
@@ -210,8 +214,10 @@ class RestRunner:
                 raise RepoError("rest_error_body", "Corps d'erreur REST reçu.")
             data = _at(body, ds.rows_path)
             if not isinstance(data, list) or any(not isinstance(r, dict) for r in data):
+                budget.record(ds.table, errors=1)
                 raise RepoError("rest_bad_response", "Liste de lignes REST attendue.")
             if len(rows) + len(data) > 1_000_000:
+                budget.record(ds.table, errors=1)
                 raise RepoError("rest_response_too_large", "Réponse REST trop volumineuse.")
             for row in data:
                 converted = []
@@ -219,12 +225,17 @@ class RestRunner:
                     raw = _at(row, column.from_)
                     if raw is None and ds.perimeter and column.name == ds.perimeter.column:
                         raw = perimeter
-                    converted.append(_convert(raw, column))
+                    try:
+                        converted.append(_convert(raw, column))
+                    except RepoError:
+                        budget.record(ds.table, errors=1)
+                        raise
                 rows.append(tuple(converted))
             next_url = _at(body, ds.pagination.next_path) if ds.pagination else None
             if not next_url:
                 return rows, calls, size
             if not isinstance(next_url, str):
+                budget.record(ds.table, errors=1)
                 raise RepoError("rest_next_url_refused", "Adresse de pagination REST refusée.")
             candidate = urljoin(url, next_url)
             parsed, allowed = urlsplit(candidate), urlsplit(origin)
@@ -233,6 +244,8 @@ class RestRunner:
             if ((parsed.scheme, parsed.netloc) != (allowed.scheme, allowed.netloc)
                     or not (path == base or path.startswith(base + "/"))
                     or "\\" in path or any(part in (".", "..") for part in path.split("/"))):
+                budget.record(ds.table, errors=1)
                 raise RepoError("rest_next_url_refused", "Adresse de pagination REST refusée.")
             url = candidate
+        budget.record(ds.table, errors=1)
         raise RepoError("rest_too_many_pages", "Nombre maximal de pages REST atteint.")

@@ -106,3 +106,26 @@ def test_usage_survives_index_rebuild(space, rest_workspace, capsys):
     before = read_usage("exemple")
     ensure_index(space, index_path("exemple")).close()
     assert read_usage("exemple") == before
+
+
+@pytest.mark.parametrize("mode", ["bad_rows", "bad_column", "overflow", "http_error"])
+def test_failed_rest_pages_count_errors(space, setup_rest, mode):
+    from skifer_atlas.compare.rest_runner import RestRunner
+    from skifer_atlas.compile import SourceTable
+
+    server, ds, compiled, plan = setup_rest
+    if mode == "bad_rows":
+        server.replies = [(200, {"unexpected": True}, {})]
+    elif mode == "bad_column":
+        server.rows = [{"c": "not-a-number"}]
+    elif mode == "overflow":
+        ds["columns"][0]["type"] = "integer"
+        compiled.sources = [SourceTable(ds["table"], (("close", "integer"),))]
+        save_dataset(space, ds)
+        server.rows = [{"c": 10**100}]
+    else:
+        server.replies = [(500, {}, {})]
+    with pytest.raises(RepoError):
+        RestRunner("exemple")(plan, compiled, threading.Event())
+    [row] = read_usage("exemple")
+    assert row["calls"] == 1 and row["errors"] == 1 and row["bytes"] > 0
