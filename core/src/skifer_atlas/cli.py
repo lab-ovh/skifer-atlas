@@ -672,7 +672,15 @@ def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    actual = sys.argv[1:] if argv is None else argv
+    if actual and actual[0] == "rest-key":
+        args, extra = parser.parse_known_args(actual)
+        if extra:
+            # argparse recopierait l'argument inconnu, qui peut être la clé refusée.
+            parser.error("La clé REST se lit uniquement sur l'entrée standard.")
+    else:
+        args = parser.parse_args(argv)
     return args.handler(args)
 
 

@@ -74,7 +74,7 @@ def test_rest_key_reads_stdin(rest_workspace, monkeypatch, capsys):
     assert rest_workspace.key not in capsys.readouterr().out
     with pytest.raises(SystemExit):
         main(["rest-key", "exemple", "api-exemple", rest_workspace.key])
-    capsys.readouterr()
+    assert rest_workspace.key not in capsys.readouterr().err
 
     from skifer_atlas.repo.git import RepoError
     from skifer_atlas.vault import keyring_vault
