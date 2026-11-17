@@ -56,6 +56,28 @@ def test_pattern_next_url_results(space, setup_rest):
     assert len(server.requests) == 2
 
 
+@pytest.mark.parametrize("foreign_part", ["scheme", "host"])
+def test_runner_refuses_next_origin_before_charging_another_call(space, setup_rest, foreign_part):
+    from urllib.parse import urlsplit, urlunsplit
+
+    from skifer_atlas.connectors.rest_budget import read_usage
+
+    server, ds, compiled, plan = setup_rest
+    origin = urlsplit(server.url)
+    candidate = origin._replace(path="/v1/data", scheme="https") if foreign_part == "scheme" else (
+        origin._replace(path="/v1/data", netloc="other.exemple.test"))
+    server.replies = [(200, {"results": server.rows, "next_url": urlunsplit(candidate)}, {})]
+    ds.update(rows_path="results", pagination={"kind": "next_url"})
+    save_dataset(space, ds)
+    with pytest.raises(RepoError) as caught:
+        RestRunner("exemple")(plan, compiled, threading.Event())
+    assert caught.value.code == "rest_next_url_refused"
+    assert len(server.requests) == 1
+    [usage] = read_usage("exemple", point_id="api-exemple")
+    assert usage["calls"] == 1
+    assert usage["errors"] == 1
+
+
 def test_pattern_header_token(space, setup_rest):
     server, _ds, compiled, plan = setup_rest
     write_points(space, [point(host=server.host, entity="exemple", http_path="/v1",

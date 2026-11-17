@@ -124,6 +124,36 @@ def test_rest_key_unknown_point_never_echoes_argument(rest_workspace, monkeypatc
     assert sentinel not in output.out + output.err
 
 
+@pytest.mark.parametrize("case", ["mixed", "lower"])
+def test_rest_key_workspace_argument_never_echoes_key(space, case):
+    import os
+    import secrets
+    import subprocess
+
+    sentinel = "Aa" + secrets.token_hex(18)
+    if case == "lower":
+        sentinel = sentinel.lower()
+    process = subprocess.run(
+        [sys.executable, "-m", "skifer_atlas.cli", "rest-key", sentinel, "api-exemple"],
+        check=False, input="", text=True, capture_output=True, env=os.environ.copy(), timeout=15)
+    output = process.stdout + process.stderr
+    assert process.returncode != 0
+    assert "not_found : Espace inconnu." in process.stderr
+    assert "Traceback" not in output, "La CLI doit rendre un refus simple."
+    assert sentinel not in output, "L'argument sensible ne doit jamais être recopié."
+
+
+def test_rest_key_unknown_workspace_names_workspace_without_echo(space, capsys):
+    import secrets
+
+    workspace = "absent-" + secrets.token_hex(8)
+    assert main(["rest-key", workspace, "api-exemple"]) == 1
+    output = capsys.readouterr()
+    assert "Espace inconnu." in output.err
+    assert "Point d'accès inconnu." not in output.err
+    assert workspace not in output.out + output.err
+
+
 def test_local_data_wins_over_rest_point(space, rest_workspace, tmp_path, capsys):
     data = tmp_path / "local"
     data.mkdir()

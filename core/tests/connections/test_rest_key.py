@@ -74,6 +74,8 @@ def test_env_variable_names_never_collide():
 
 
 def test_env_key_is_never_written(space, monkeypatch):
+    from keyring.errors import KeyringError
+
     from skifer_atlas.vault import keyring_vault
 
     write_points(space, [point()])
@@ -81,14 +83,23 @@ def test_env_key_is_never_written(space, monkeypatch):
     monkeypatch.setenv("ATLAS_REST_KEY_API_EXEMPLE", key)
     before = dict(os.environ)
 
-    def unavailable():
-        raise RepoError("vault_unavailable", "Sans trousseau.")
+    backend = MemoryKeyring()
+    vault = Vault(backend)
+    vault.put("exemple", "api-exemple", Credential("apikey", key, host="api.exemple.test"))
+    assert vault.get("exemple", "api-exemple").access_token == key
+    vault.delete("exemple", "api-exemple")
+    monkeypatch.setattr(keyring_vault, "system_keyring", lambda: backend)
 
-    monkeypatch.setattr(keyring_vault, "system_keyring", unavailable)
-    connections.ensure_usable("exemple", "api-exemple")
-    found = connections.status("exemple", "api-exemple")
-    assert found["key_source"] == "env" and found["my_access"] == "connected"
-    assert connections.list_connections("exemple")[0]["key_source"] == "env"
+    def unavailable(*args):
+        raise KeyringError("Lecture indisponible, écritures possibles.")
+
+    with monkeypatch.context() as reading:
+        reading.setattr(backend, "get_password", unavailable)
+        connections.ensure_usable("exemple", "api-exemple")
+        found = connections.status("exemple", "api-exemple")
+        assert found["key_source"] == "env" and found["my_access"] == "connected"
+        assert connections.list_connections("exemple")[0]["key_source"] == "env"
+    assert vault.get("exemple", "api-exemple") is None
     for path in space.parents[2].rglob("*"):
         if path.is_file():
             assert key.encode() not in path.read_bytes()

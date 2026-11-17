@@ -521,8 +521,11 @@ def _rest_key(args: argparse.Namespace) -> int:
 
     from . import connections
 
-    key = getpass.getpass("Clé d'API : ") if sys.stdin.isatty() else sys.stdin.read()
     try:
+        if get_workspace(args.workspace) is None:
+            print("not_found : Espace inconnu.", file=sys.stderr)
+            return 1
+        key = getpass.getpass("Clé d'API : ") if sys.stdin.isatty() else sys.stdin.read()
         connections.store_api_key(args.workspace, args.point, key)
     except RepoError as error:
         message = "Point d'accès inconnu." if error.code == "not_found" else error.message
