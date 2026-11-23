@@ -95,9 +95,47 @@ def parse_body(body: str) -> tuple[str, dict | None]:
         block = json.loads(match["json"])
     except ValueError:
         return body.strip(), None
+    if not _valid_block(block):
+        return body.strip(), None
     justification = body[:match.start()].replace(
         "<!-- Bloc lu par Atlas : ne pas modifier. -->", "").strip()
     return justification, block
+
+
+def _valid_block(block: object) -> bool:
+    """Contrat minimal des champs lus, y compris les anciens blocs de gouvernance."""
+    if not isinstance(block, dict) or not isinstance(block.get("target"), dict):
+        return False
+    target = block["target"]
+    if any(not isinstance(target.get(key), str) for key in ("id", "kind", "path")):
+        return False
+    if any(value is not None and not isinstance(value, str)
+           for value in (target.get("entity"), target.get("kpi_id"))):
+        return False
+    if target["kind"] == "variant" and (
+            not isinstance(target.get("entity"), str)
+            or not isinstance(target.get("kpi_id"), str)):
+        return False
+    if not isinstance(block.get("nature"), str) or "version" not in block:
+        return False
+    if any(value is not None and type(value) is not int
+           for value in (block.get("version"), block.get("base_version"))):
+        return False
+    if target["kind"] not in ("governance", "access_points") and block["version"] is None:
+        return False
+    if "schema_version" in block and type(block["schema_version"]) is not int:
+        return False
+    diff = block.get("diff")
+    if diff is not None:
+        if not isinstance(diff, dict) or not isinstance(diff.get("differences", []), list):
+            return False
+        if any(not isinstance(item, dict)
+               or any(item.get(key) is not None and not isinstance(item[key], str)
+                      for key in ("classification", "node"))
+               for item in diff.get("differences", [])):
+            return False
+    return all(block.get(key) is None or isinstance(block[key], str)
+               for key in ("domain", "mention", "base_digest", "base_governance"))
 
 
 def review_domain(context: Context, target: dict, base_version: int | None,
