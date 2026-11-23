@@ -50,10 +50,26 @@ class ApiKey:
 def get(url: str, *, key: ApiKey, origin: str, timeout=TIMEOUT,
         max_bytes=MAX_BODY) -> Response:
     """GET borné, clé liée exactement à l'origine, sans suivi de redirection (ADR 0053)."""
+    try:
+        code, result = _get(url, key=key, origin=origin, timeout=timeout, max_bytes=max_bytes)
+    except ValueError:
+        code, result = "host_unreachable", None
+    # La frame de cette fonction figure dans le traceback : aucun identifiant ne doit y rester.
+    del key, url, origin
+    if code == "rest_next_url_refused":
+        raise RepoError(code, "Adresse de pagination REST refusée.")
+    if code == "rest_response_too_large":
+        raise RepoError(code, "Réponse REST trop volumineuse.")
+    if code:
+        raise RepoError("host_unreachable", "Hôte REST injoignable.")
+    return result
+
+
+def _get(url: str, *, key: ApiKey, origin: str, timeout: float, max_bytes: int):
     parts, allowed = urllib.parse.urlsplit(url), urllib.parse.urlsplit(origin)
     if ((parts.scheme, parts.netloc) != (allowed.scheme, allowed.netloc)
             or parts.username is not None or parts.fragment):
-        raise RepoError("rest_next_url_refused", "Adresse de pagination REST refusée.")
+        return "rest_next_url_refused", None
     query = [(k, v) for k, v in urllib.parse.parse_qsl(parts.query, keep_blank_values=True)
              if k != key.name]
     headers = {"Accept": "application/json", "User-Agent": "skifer-atlas"}
@@ -115,11 +131,7 @@ def get(url: str, *, key: ApiKey, origin: str, timeout=TIMEOUT,
     except queue.Empty:
         abandoned.set()
         code, result = "host_unreachable", None
-    if code == "rest_response_too_large":
-        raise RepoError(code, "Réponse REST trop volumineuse.")
-    if code:
-        raise RepoError("host_unreachable", "Hôte REST injoignable.")
-    return result
+    return code, result
 
 
 def request(method: str, url: str, *, token: str | None = None, json_body: Any = None,

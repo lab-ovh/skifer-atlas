@@ -242,8 +242,12 @@ class RestRunner:
             if not isinstance(next_url, str) or re.search(r"[\x00-\x20\x7f]", next_url):
                 budget.record(ds.table, errors=1)
                 raise RepoError("rest_next_url_refused", "Adresse de pagination REST refusée.")
-            candidate = urljoin(url, next_url)
-            parsed, allowed = urlsplit(candidate), urlsplit(origin)
+            try:
+                candidate = urljoin(url, next_url)
+                parsed, allowed = urlsplit(candidate), urlsplit(origin)
+            except ValueError:
+                budget.record(ds.table, errors=1)
+                raise RepoError("rest_next_url_refused", "Adresse de pagination REST refusée.") from None
             path = unquote(parsed.path)
             base = point.http_path.rstrip("/")
             if ((parsed.scheme, parsed.netloc) != (allowed.scheme, allowed.netloc)

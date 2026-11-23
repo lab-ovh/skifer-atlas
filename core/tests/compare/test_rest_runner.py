@@ -454,3 +454,18 @@ def test_corrupt_cached_parquet_is_explicit_error(setup_rest):
         runner(plan, compiled, threading.Event())
     assert caught.value.code == "rest_bad_response"
     assert len(server.requests) == 1
+
+
+@pytest.mark.parametrize("next_url", ["//[::1]x", "//[abc]/x"])
+def test_malformed_next_url_counts_error(space, setup_rest, next_url):
+    from skifer_atlas.connectors.rest_budget import read_usage
+
+    server, ds, compiled, plan = setup_rest
+    ds.update(rows_path="results", pagination={"kind": "next_url"})
+    save_dataset(space, ds)
+    server.replies = [(200, {"results": server.rows, "next_url": next_url}, {})]
+    with pytest.raises(RepoError) as caught:
+        RestRunner("exemple")(plan, compiled, threading.Event())
+    assert caught.value.code == "rest_next_url_refused"
+    [usage] = read_usage("exemple", point_id="api-exemple")
+    assert usage["calls"] == 1 and usage["errors"] == 1 and len(server.requests) == 1

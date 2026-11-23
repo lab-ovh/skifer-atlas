@@ -163,3 +163,24 @@ def test_total_deadline_limits_slow_response():
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+@pytest.mark.parametrize("bad", [" ", "\x01"])
+def test_invalid_path_real_server_keeps_key_out_of_traceback_frames(bad):
+    import traceback
+
+    with FakeRest() as server:
+        with pytest.raises(RepoError) as caught:
+            http.get(server.url + "/v1/data" + bad + "page", origin=server.url,
+                     key=http.ApiKey(server.key, "query", "apikey"))
+        error = caught.value
+        assert error.code == "host_unreachable" and str(error) == "Hôte REST injoignable."
+        assert error.__cause__ is None and error.__context__ is None
+        assert server.key not in "".join(traceback.format_exception(error))
+        tb = error.__traceback__
+        while tb:
+            for value in list(tb.tb_frame.f_locals.values()):
+                assert server.key not in repr(value)
+                assert not isinstance(value, http.ApiKey) or value.value != server.key
+            tb = tb.tb_next
+        assert not server.requests
