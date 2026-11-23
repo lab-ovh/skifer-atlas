@@ -154,6 +154,7 @@ datasets:
 | 200 avec clé d'`error_keys` | `rest_error_body` | texte du corps jamais recopié |
 | autre 4xx, 5xx | `rest_http_error`, `rest_server_error` | pas de nouvel essai |
 | réseau | `host_unreachable` | existant (`http.py`) |
+| échéance globale de 30 s dépassée | `rest_timeout` | pas de nouvel essai ; 504 |
 | autres | `budget_exceeded`, `rest_bad_response`, `rest_response_too_large`, `rest_too_many_pages`, `rest_next_url_refused`, `rest_scope_required`, `rest_perimeter_unsupported`, `rest_period_required`, `rest_dataset_missing`, `rest_dataset_mismatch`, `invalid_rest_datasets`, `invalid_rest_access_points` | |
 
 `_STORED_ERRORS` (`orchestrate.py:45-50`) reçoit un texte fixe pour tous les codes d'exécution (`budget_exceeded`, `rate_limited`, `rest_*`) : sinon `_stored_error` (`orchestrate.py:53-57`) remplace leur texte par « Échec de la comparaison. ». Le cas existant `result_too_large`, traité séparément avec `max_rows`, reste inchangé. `ERROR_STATUS` (`api/app.py:38`) reçoit chaque nouveau code : 422 pour les erreurs de configuration et de périmètre, 429 pour `budget_exceeded` et `rate_limited`, 502 pour les erreurs de fournisseur.

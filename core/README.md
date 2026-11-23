@@ -224,6 +224,10 @@ HTTPS est obligatoire ; seul un faux serveur sur `localhost` ou `127.0.0.1` peut
 utiliser HTTP (port 1024–65535). Aucun suivi de redirection ; une pagination ne quitte
 jamais l'origine et le chemin de base. Pour une clé en en-tête : `key_in: header`,
 `key_name: Authorization`, `key_prefix: "Bearer "`. Aucune valeur de clé dans le YAML.
+Chaque appel a une échéance globale de 30 s (connexion, en-têtes et corps) : au-delà,
+`rest_timeout`, sans nouvel essai. Pendant la résolution DNS, l'ouverture et la lecture
+des en-têtes, l'appel bloqué ne peut pas être interrompu : il se termine en arrière-plan
+quand le système le rend.
 
 `rest_datasets.yaml` associe chaque table logique à son appel et à ses colonnes :
 
