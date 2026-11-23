@@ -89,7 +89,8 @@ def test_network_failure_never_includes_url_or_key():
     key = http.ApiKey(server.key, "query", "apikey", "")
     server.close()
     with pytest.raises(RepoError) as caught:
-        http.get(target, key=key, origin=server.url, timeout=0.5)
+        # Windows peut mettre plusieurs secondes à refuser une connexion locale.
+        http.get(target, key=key, origin=server.url, timeout=10)
     assert caught.value.code == "host_unreachable"
     assert target not in str(caught.value) and key.value not in str(caught.value)
 
