@@ -8,6 +8,7 @@ from __future__ import annotations
 import http.client
 import json
 import queue
+import socket
 import threading
 import time
 import urllib.error
@@ -58,6 +59,8 @@ def get(url: str, *, key: ApiKey, origin: str, timeout=TIMEOUT,
     del key, url, origin
     if code == "rest_next_url_refused":
         raise RepoError(code, "Adresse de pagination REST refusée.")
+    if code == "rest_timeout":
+        raise RepoError(code, "Délai de l'appel REST dépassé.")
     if code == "rest_response_too_large":
         raise RepoError(code, "Réponse REST trop volumineuse.")
     if code:
@@ -82,6 +85,8 @@ def _get(url: str, *, key: ApiKey, origin: str, timeout: float, max_bytes: int):
     deadline = time.monotonic() + timeout
     outcome = queue.Queue(maxsize=1)
     abandoned = threading.Event()
+    socket_lock = threading.Lock()
+    active_socket = [None]
 
     def fetch():
         try:
@@ -91,6 +96,7 @@ def _get(url: str, *, key: ApiKey, origin: str, timeout: float, max_bytes: int):
                 reply = error
             with reply:
                 response = reply.fp if isinstance(reply, urllib.error.HTTPError) else reply
+                expected = response.length
                 chunks, size = [], 0
                 while True:
                     if response.fp is None:
@@ -100,7 +106,12 @@ def _get(url: str, *, key: ApiKey, origin: str, timeout: float, max_bytes: int):
                         raise TimeoutError()
                     # read1 effectue au plus une lecture de socket : une réponse lente
                     # ne peut pas prolonger l'échéance en envoyant des octets isolés.
-                    response.fp.raw._sock.settimeout(remaining)
+                    sock = _response_socket(response)
+                    with socket_lock:
+                        if abandoned.is_set():
+                            raise TimeoutError()
+                        active_socket[0] = sock
+                    sock.settimeout(remaining)
                     chunk = response.read1(min(65536, max_bytes + 1 - size))
                     if not chunk:
                         break
@@ -109,12 +120,21 @@ def _get(url: str, *, key: ApiKey, origin: str, timeout: float, max_bytes: int):
                     if size > max_bytes:
                         outcome.put(("rest_response_too_large", None))
                         return
+                if expected is not None and size != expected:
+                    outcome.put(("host_unreachable", None))
+                    return
                 body = _decode(b"".join(chunks))
                 result = Response(reply.code, body, size,
                                   {name.lower(): value for name, value in reply.headers.items()})
                 outcome.put((None, result))
                 return
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError,
+        except TimeoutError:
+            outcome.put(("rest_timeout", None))
+            return
+        except urllib.error.URLError as error:
+            outcome.put(("rest_timeout" if isinstance(error.reason, TimeoutError) else "host_unreachable", None))
+            return
+        except (ConnectionError, OSError, ValueError,
                 http.client.HTTPException, RecursionError):
             pass
         except Exception:  # noqa: BLE001 — ne jamais exposer une exception du worker
@@ -130,8 +150,20 @@ def _get(url: str, *, key: ApiKey, origin: str, timeout: float, max_bytes: int):
         code, result = outcome.get(timeout=max(0, deadline - time.monotonic()))
     except queue.Empty:
         abandoned.set()
-        code, result = "host_unreachable", None
+        with socket_lock:
+            sock = active_socket[0]
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+        code, result = "rest_timeout", None
     return code, result
+
+
+def _response_socket(response):
+    # urllib n'expose pas la socket de HTTPResponse par une API publique.
+    return response.fp.raw._sock
 
 
 def request(method: str, url: str, *, token: str | None = None, json_body: Any = None,

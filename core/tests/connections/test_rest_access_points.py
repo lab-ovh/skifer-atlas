@@ -73,6 +73,12 @@ def test_rest_host_validation(host):
         RestAccessPoint(**point(host=host))
 
 
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1"])
+def test_rest_loopback_port_required(host):
+    with pytest.raises(ValueError, match="Port de boucle locale requis, entre 1024 et 65535"):
+        RestAccessPoint(**point(host=host))
+
+
 def test_rest_loopback_http_with_port():
     for host in ("127.0.0.1:1234", "localhost:65535"):
         p = RestAccessPoint(**point(host=host, http_path="/v1/"))

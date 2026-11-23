@@ -497,7 +497,7 @@ def _guarded(job: Job, runner: Runner) -> None:
 
 
 def start(db: Path, account: str | None, prepared: Prepared, runner: Runner,
-          wait: bool = False) -> Job:
+          wait: bool = False, data_source: str | None = None) -> Job:
     """Enregistre la comparaison (`running`) puis l'exécute, en tâche de fond par défaut."""
     # La ligne et le job ensemble, sous le verrou de création de la base : `get_comparison`
     # relit le registre par `registered` et ne voit jamais la ligne « running » d'un job pas
@@ -510,7 +510,7 @@ def start(db: Path, account: str | None, prepared: Prepared, runner: Runner,
                 raise RepoError("comparison_running", "Cette comparaison est déjà en cours.")
         number = store.create(db, account, prepared.kpi.data_product.id,
                               prepared.kpi.data_product.version, prepared.scope_dict(),
-                              prepared.tolerance)
+                              prepared.tolerance, data_source)
         current = Job(number, db, prepared)
         with _jobs_lock:
             _jobs[(str(db), number)] = current

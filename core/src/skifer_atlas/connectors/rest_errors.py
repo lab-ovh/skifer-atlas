@@ -14,6 +14,7 @@ REST_ERRORS = {
     "rest_payment_required": (502, "Appel REST hors forfait."),
     "rest_forbidden": (502, "Appel REST interdit."),
     "rest_error_body": (502, "Corps d'erreur REST reçu."),
+    "rest_timeout": (504, "Délai de l'appel REST dépassé."),
     "rest_http_error": (502, "Échec de l'appel REST."),
     "rest_server_error": (502, "Échec du serveur REST."),
     "rest_bad_response": (502, "Réponse REST illisible."),

@@ -4,7 +4,6 @@ import secrets
 import sys
 import threading
 from pathlib import Path
-from urllib.parse import quote, urlencode, urlunsplit
 
 import pytest
 from fake_rest import FakeRest
@@ -22,8 +21,6 @@ def test_mask_unit():
     key = secrets.token_urlsafe(24) + "/+"
     credential = http.ApiKey(key, "query", "apikey", "")
     assert key not in repr(credential)
-    url = urlunsplit(("https", "api.exemple.test", "/v1", urlencode({"apikey": key, "x": 1}), ""))
-    assert quote(key, safe="") in url
     assert key not in http.message_of({"message": "x" * 295 + key}, key)
 
 
@@ -157,7 +154,8 @@ def test_total_deadline_limits_slow_response():
         with pytest.raises(RepoError) as caught:
             http.get(origin + "/data", key=http.ApiKey("fake-key", "query", "apikey"),
                      origin=origin, timeout=0.2)
-        assert caught.value.code == "host_unreachable"
+        assert caught.value.code == "rest_timeout"
+        assert str(caught.value) == "Délai de l'appel REST dépassé."
         assert time.monotonic() - start < 1.0
     finally:
         server.shutdown()
@@ -184,3 +182,82 @@ def test_invalid_path_real_server_keeps_key_out_of_traceback_frames(bad):
                 assert not isinstance(value, http.ApiKey) or value.value != server.key
             tb = tb.tb_next
         assert not server.requests
+
+
+def test_truncated_content_length_refused():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Truncated(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            self.wfile.write(b"1234567")
+            self.close_connection = True
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Truncated)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    origin = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with pytest.raises(RepoError) as caught:
+            http.get(origin + "/data", key=http.ApiKey("fake-key", "query", "apikey"), origin=origin)
+        assert caught.value.code == "host_unreachable"
+        assert str(caught.value) == "Hôte REST injoignable."
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_response_socket_private_access_smoke(monkeypatch):
+    import socket
+
+    seen = []
+    original = http._response_socket
+
+    def inspect(response):
+        found = original(response)
+        assert isinstance(found, socket.socket)
+        seen.append(found)
+        return found
+
+    monkeypatch.setattr(http, "_response_socket", inspect)
+    with FakeRest() as server:
+        assert http.get(server.url + "/v1/data", origin=server.url,
+                        key=http.ApiKey(server.key, "query", "apikey")).status == 200
+    assert seen
+
+
+def test_deadline_covers_slow_headers():
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class SlowHeaders(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            time.sleep(0.4)
+            try:
+                self.send_response(200)
+                self.end_headers()
+            except OSError:
+                pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), SlowHeaders)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    origin = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with pytest.raises(RepoError) as caught:
+            http.get(origin + "/data", key=http.ApiKey("fake-key", "query", "apikey"),
+                     origin=origin, timeout=0.1)
+        assert caught.value.code == "rest_timeout"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

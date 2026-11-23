@@ -157,9 +157,10 @@ def start_comparison(workspace_id: str, request: CompareRequest,
     prepared = prepare_in(repo_dir(workspace_id), request, workspace_id, data is not None)
     if data is None:
         check_access(workspace_id, prepared)
+    data_source = "données locales" if runner is None and data is not None else None
     runner = runner or (LocalRunner(data) if data is not None else remote_runner(workspace_id))
     started = orchestrate.start(index_path(workspace_id), workspace.account or None, prepared,
-                                runner, wait)
+                                runner, wait, data_source=data_source)
     return {"id": started.number, "status": "running", "alerts": prepared.alerts()}
 
 

@@ -442,18 +442,44 @@ def test_rebound_perimeter_uses_physical_column(space, real_rest_workspace):
     assert [r[1].get("symbol") for r in server.requests] == [["EX"], ["OTHER"]]
 
 
-def test_corrupt_cached_parquet_is_explicit_error(setup_rest):
+@pytest.mark.parametrize("corruption", ["empty", "truncated", "invalid"])
+def test_corrupt_cached_parquet_is_refetched(space, setup_rest, corruption):
+    from skifer_atlas.connectors.rest_budget import read_usage
+    from skifer_atlas.connectors.rest_cache import paths
+
+    server, ds, compiled, plan = setup_rest
+    compiled.window = (date(2025, 1, 1), date(2025, 1, 31))
+    ds["window"] = {"from_param": "from", "to_param": "to"}
+    save_dataset(space, ds)
+    runner = RestRunner("exemple")
+    runner(plan, compiled, threading.Event())
+    cache = next(paths("exemple", "unused")[0].parent.glob("*.parquet"))
+    original = cache.read_bytes()
+    cache.write_bytes({"empty": b"", "truncated": original[:len(original) // 2],
+                       "invalid": b"corrupt parquet"}[corruption])
+    sentinel = space / "must-stay"
+    sentinel.write_text("untouched")
+    assert runner(plan, compiled, threading.Event()).rows == [(10.0,)]
+    assert len(server.requests) == 2 and sentinel.read_text() == "untouched"
+    assert runner(plan, compiled, threading.Event()).rows == [(10.0,)]
+    assert len(server.requests) == 2
+    [usage] = read_usage("exemple", point_id="api-exemple")
+    assert usage["calls"] == 2 and usage["errors"] == 1
+
+
+def test_corrupt_cache_fetch_fails_without_retry(setup_rest):
     from skifer_atlas.connectors.rest_cache import paths
 
     server, _ds, compiled, plan = setup_rest
     runner = RestRunner("exemple")
     runner(plan, compiled, threading.Event())
     cache = next(paths("exemple", "unused")[0].parent.glob("*.parquet"))
-    cache.write_bytes(b"corrupt parquet")
+    cache.write_bytes(b"bad")
+    server.replies = [(500, {}, {})]
     with pytest.raises(RepoError) as caught:
         runner(plan, compiled, threading.Event())
-    assert caught.value.code == "rest_bad_response"
-    assert len(server.requests) == 1
+    assert caught.value.code == "rest_server_error" and len(server.requests) == 2
+    assert not cache.exists() and not cache.with_suffix(".json").exists()
 
 
 @pytest.mark.parametrize("next_url", ["//[::1]x", "//[abc]/x"])

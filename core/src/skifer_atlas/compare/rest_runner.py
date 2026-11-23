@@ -104,6 +104,13 @@ def parameters(dataset, source, window):
     return [({**params, perimeter.param: value}, value) for value in dict.fromkeys(selected)]
 
 
+def _check_parquet(path):
+    with duckdb.connect(":memory:") as connection:
+        cursor = connection.execute("SELECT * FROM read_parquet(?)", [str(path)])
+        while cursor.fetchmany(4096):
+            pass
+
+
 class RestRunner:
     def __init__(self, workspace_id, refresh=False, now=utc_now):
         self.workspace_id, self.refresh, self.now = workspace_id, refresh, now
@@ -142,6 +149,18 @@ class RestRunner:
                         "access_point": point.id, "table": ds.table, "calls": 0, "bytes": 0,
                         "cache": "none", "key_source": key_source})
                     if hit is not None and not forced:
+                        try:
+                            _check_parquet(hit[0])
+                        except duckdb.Error:
+                            try:
+                                for item in rest_cache.paths(self.workspace_id, identity):
+                                    item.unlink(missing_ok=True)
+                            except OSError:
+                                budget.record(ds.table, errors=1)
+                                raise RepoError("rest_bad_response", "Cache REST illisible.") from None
+                            budget.record(ds.table, errors=1)
+                            hit = None
+                    if hit is not None and not forced:
                         path, metadata = hit
                         budget.record(ds.table, cache_hits=1)
                         if report["calls"] == 0:
@@ -156,6 +175,16 @@ class RestRunner:
                         except RepoError:
                             budget.record(ds.table, errors=1)
                             raise
+                        try:
+                            _check_parquet(path)
+                        except duckdb.Error:
+                            try:
+                                for item in rest_cache.paths(self.workspace_id, identity):
+                                    item.unlink(missing_ok=True)
+                            except OSError:
+                                pass
+                            budget.record(ds.table, errors=1)
+                            raise RepoError("rest_bad_response", "Cache REST illisible.") from None
                         self.refreshed.add(identity)
                         report["calls"] += count
                         report["bytes"] += size
