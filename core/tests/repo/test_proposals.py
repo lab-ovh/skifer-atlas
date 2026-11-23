@@ -4,12 +4,15 @@ L'identité change avec `ATLAS_ACCOUNT` : chaque requête la relit, comme si plu
 membres partageaient le même dépôt distant.
 """
 
+import copy
+
 import pytest
 from fastapi.testclient import TestClient
 from workspace_helpers import EXAMPLE, REVENU_NET, atlas_env, commit_all, git, remote
 
 from skifer_atlas.api.app import create_app
 from skifer_atlas.governance.rules import CANONICAL_MENTION, NO_REVIEW_MENTION
+from skifer_atlas.proposals.common import parse_body, render_body
 
 __all__ = ["atlas_env", "remote"]  # fixtures importées
 
@@ -60,6 +63,61 @@ def code(response):
 
 def branches(bare):
     return git(bare, "branch", "--list", "prop/*").split()
+
+
+VALID_BLOCK = {"target": {"id": "revenu-net", "kind": "kpi", "path": REVENU_NET,
+                          "entity": None, "kpi_id": "revenu-net"},
+               "nature": "new_version", "version": 5, "base_version": 4}
+
+
+@pytest.mark.parametrize("block", [
+    {}, [], {"nature": "new_version", "version": 5},
+    {"target": [], "nature": "new_version", "version": 5},
+    {"target": {"kind": "kpi", "path": REVENU_NET}, "nature": "new_version", "version": 5},
+    {"target": VALID_BLOCK["target"], "version": 5},
+    {**VALID_BLOCK, "version": True}, {**VALID_BLOCK, "base_version": "4"},
+    {**VALID_BLOCK, "domain": []},
+    {**VALID_BLOCK, "diff": {"differences": [{"node": []}]}},
+    {**VALID_BLOCK, "schema_version": False},
+    {**VALID_BLOCK, "target": {**VALID_BLOCK["target"], "kind": "variant", "entity": None}},
+])
+def test_parse_body_rejects_malformed_proposal_blocks(block):
+    body = render_body("Justification", block)
+    assert parse_body(body) == (body.strip(), None)
+
+
+def test_parse_body_preserves_valid_and_legacy_blocks():
+    block = copy.deepcopy(VALID_BLOCK)
+    assert parse_body(render_body("Justification", block)) == ("Justification", block)
+    legacy = {"target": {"id": "governance", "kind": "governance", "path": "governance.yaml"},
+              "nature": "governance", "version": None, "base_governance": "digest"}
+    assert parse_body(render_body("Ancienne", legacy)) == ("Ancienne", legacy)
+
+
+def test_malformed_proposal_does_not_break_list_or_operations(client, joined, as_):
+    from skifer_atlas.githost.local import LocalHost
+
+    as_("julien.h")
+    assert propose(client, revenu_net(), 4).status_code == 201
+    assert propose(client, revenu_net("Autre précision"), 4).status_code == 201
+    LocalHost(joined[0], "main").update_body(2, render_body("Corps modifié", {}))
+    response = client.get(PROPOSALS)
+    assert response.status_code == 200
+    assert [(item["id"], item["atlas"]) for item in response.json()] == [(1, True)]
+    detail = client.get(f"{PROPOSALS}/2")
+    assert detail.status_code == 404
+    assert detail.json() == {"detail": {"code": "not_found", "message":
+                             "La pull request #2 n'est pas une proposition Atlas."}}
+    for method, path, payload, message in [
+        (client.post, f"{PROPOSALS}/2/revisions", {"document_yaml": revenu_net()},
+         "Cette proposition n'est pas une proposition Atlas."),
+        (client.post, f"{PROPOSALS}/2/merge", None, "La pull request #2 n'est pas une proposition Atlas."),
+    ]:
+        response = method(path, json=payload) if payload is not None else method(path)
+        assert response.status_code == 404
+        assert response.json() == {"detail": {"code": "not_found", "message": message}}
+    LocalHost(joined[0], "main").update_body(2, "Pull request ordinaire")
+    assert client.get(f"{PROPOSALS}/2").json() == detail.json()
 
 
 def test_full_cycle(client, joined, as_):
