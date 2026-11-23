@@ -412,6 +412,8 @@ def _compare_text(found: dict) -> str:
     lines = [(f"{found['kpi_id']} v{found['kpi_version']} · scope {found['scope']['id']} · "
               f"tolérance {_number(found['tolerance_pct'])} % · comparaison {found['id']} "
               f"({found['status']})")]
+    if found.get("data_source") == "données locales":
+        lines.append("sources : données locales")
     if found["error"]:
         lines.append(f"  erreur : {found['error']}")
     for result in found["results"]:
@@ -449,6 +451,8 @@ def _compare(args: argparse.Namespace) -> int:
     from .compare.orchestrate import start
 
     local = Path(args.duckdb_data) if args.duckdb_data else service.local_data()
+    if local is not None and not args.duckdb_data:
+        print("Données locales fournies par ATLAS_COMPARE_DATA.", file=sys.stderr)
     workspace = get_workspace(args.workspace)
     folder = Path(args.workspace)
     prepared = None
@@ -480,6 +484,8 @@ def _compare(args: argparse.Namespace) -> int:
             found = store.get(db, start(db, account, prepared, runner, wait=True).number)
             if isinstance(runner, service.RemoteRunner):
                 found["rest"] = runner.report()
+            else:
+                found["data_source"] = "données locales"
         except RepoError as error:
             print(f"{error.code} : {error.message}", file=sys.stderr)
             if error.code == "vault_unavailable" and workspace is not None and prepared is not None:

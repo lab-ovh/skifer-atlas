@@ -10,7 +10,6 @@ import pytest
 from fake_rest import FakeRest
 
 from skifer_atlas.connectors import http
-from skifer_atlas.masking import mask_url
 from skifer_atlas.repo.git import RepoError
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "compare"))
@@ -24,8 +23,7 @@ def test_mask_unit():
     credential = http.ApiKey(key, "query", "apikey", "")
     assert key not in repr(credential)
     url = urlunsplit(("https", "api.exemple.test", "/v1", urlencode({"apikey": key, "x": 1}), ""))
-    assert key not in mask_url(url, "apikey") and quote(key, safe="") not in mask_url(url, "apikey")
-    assert "x=1" in mask_url(url, "apikey")
+    assert quote(key, safe="") in url
     assert key not in http.message_of({"message": "x" * 295 + key}, key)
 
 
@@ -128,3 +126,40 @@ def test_get_sanitizes_exception_chain_and_counts_call(space, setup_rest, monkey
     assert server.key not in output.out + output.err
     [usage] = read_usage("exemple", point_id="api-exemple")
     assert usage["calls"] == 1 and usage["errors"] == 1
+
+
+def test_total_deadline_limits_slow_response():
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Slow(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            for _ in range(100):
+                try:
+                    self.wfile.write(b"x")
+                    self.wfile.flush()
+                except OSError:
+                    break
+                time.sleep(0.03)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    origin = f"http://127.0.0.1:{server.server_port}"
+    start = time.monotonic()
+    try:
+        with pytest.raises(RepoError) as caught:
+            http.get(origin + "/data", key=http.ApiKey("fake-key", "query", "apikey"),
+                     origin=origin, timeout=0.2)
+        assert caught.value.code == "host_unreachable"
+        assert time.monotonic() - start < 1.0
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

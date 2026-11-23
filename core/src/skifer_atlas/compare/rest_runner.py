@@ -161,9 +161,12 @@ class RestRunner:
                         report["bytes"] += size
                         report["cache"] = "refreshed" if forced else "none"
                     files.append(str(path))
-                with duckdb.connect(":memory:") as connection:
-                    connection.execute("COPY (SELECT * FROM read_parquet(?)) TO ? (FORMAT PARQUET)",
-                                       [files, str(Path(folder) / (source.table + ".parquet"))])
+                try:
+                    with duckdb.connect(":memory:") as connection:
+                        connection.execute("COPY (SELECT * FROM read_parquet(?)) TO ? (FORMAT PARQUET)",
+                                           [files, str(Path(folder) / (source.table + ".parquet"))])
+                except duckdb.Error:
+                    raise RepoError("rest_bad_response", "Cache REST illisible.") from None
             return LocalRunner(Path(folder))(plan, compiled, cancel)
 
     def _fetch(self, point, ds, params, perimeter, key, budget, cancel):

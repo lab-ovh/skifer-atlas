@@ -40,7 +40,7 @@ class RestAccessPoint(BaseModel):
         local = _LOCAL.fullmatch(self.host)
         if not _DNS.fullmatch(self.host) and local is None:
             raise ValueError("Hôte DNS en minuscules attendu, sans schéma ni chemin.")
-        if local and local[2] and not 1024 <= int(local[2]) <= 65535:
+        if local and (local[2] is None or not 1024 <= int(local[2]) <= 65535):
             raise ValueError("Port de boucle locale hors limites.")
         if ".." in self.http_path or "//" in self.http_path:
             raise ValueError("Chemin de base invalide.")

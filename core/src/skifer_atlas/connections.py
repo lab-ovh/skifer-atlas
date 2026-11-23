@@ -111,9 +111,6 @@ def access_point(workspace_id: str, access_point_id: str) -> AccessPoint | RestA
     registered = registry(workspace_id)
     point = registered.get(access_point_id)
     if point is None:
-        if registered.diagnostics:
-            raise RepoError("invalid_rest_access_points", f"{REST_FILE} est invalide.",
-                            registered.diagnostics[0]["issues"])
         raise RepoError("not_found", f"Point d'accès « {access_point_id} » inconnu.")
     if point.platform not in _allowed(workspace_id):
         raise RepoError("platform_not_allowed", f"La plateforme « {point.platform} » n'est "

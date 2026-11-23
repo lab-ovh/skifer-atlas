@@ -440,3 +440,17 @@ def test_rebound_perimeter_uses_physical_column(space, real_rest_workspace):
     assert plan.canonical.compiled.sources[0].perimeter == ("ticker:in:EX,OTHER",)
     RestRunner("exemple")(plan, plan.canonical.compiled, threading.Event())
     assert [r[1].get("symbol") for r in server.requests] == [["EX"], ["OTHER"]]
+
+
+def test_corrupt_cached_parquet_is_explicit_error(setup_rest):
+    from skifer_atlas.connectors.rest_cache import paths
+
+    server, _ds, compiled, plan = setup_rest
+    runner = RestRunner("exemple")
+    runner(plan, compiled, threading.Event())
+    cache = next(paths("exemple", "unused")[0].parent.glob("*.parquet"))
+    cache.write_bytes(b"corrupt parquet")
+    with pytest.raises(RepoError) as caught:
+        runner(plan, compiled, threading.Event())
+    assert caught.value.code == "rest_bad_response"
+    assert len(server.requests) == 1

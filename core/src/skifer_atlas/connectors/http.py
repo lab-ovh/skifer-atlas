@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import http.client
 import json
+import queue
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -60,22 +63,63 @@ def get(url: str, *, key: ApiKey, origin: str, timeout=TIMEOUT,
         headers[key.name] = key.prefix + key.value
     target = urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
     call = urllib.request.Request(target, headers=headers, method="GET")
-    try:
+    deadline = time.monotonic() + timeout
+    outcome = queue.Queue(maxsize=1)
+    abandoned = threading.Event()
+
+    def fetch():
         try:
-            reply = _OPENER.open(call, timeout=timeout)
-        except urllib.error.HTTPError as error:
-            reply = error
-        with reply:
-            raw = reply.read(max_bytes + 1)
-            if len(raw) > max_bytes:
-                raise RepoError("rest_response_too_large", "Réponse REST trop volumineuse.")
-            return Response(reply.code, _decode(raw), len(raw),
-                            {name.lower(): value for name, value in reply.headers.items()})
-    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError,
-            http.client.HTTPException, RecursionError):
-        # Lever hors du gestionnaire pour ne conserver aucun contexte contenant l'URL.
-        pass
-    raise RepoError("host_unreachable", "Hôte REST injoignable.")
+            try:
+                reply = _OPENER.open(call, timeout=timeout)
+            except urllib.error.HTTPError as error:
+                reply = error
+            with reply:
+                response = reply.fp if isinstance(reply, urllib.error.HTTPError) else reply
+                chunks, size = [], 0
+                while True:
+                    if response.fp is None:
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or abandoned.is_set():
+                        raise TimeoutError()
+                    # read1 effectue au plus une lecture de socket : une réponse lente
+                    # ne peut pas prolonger l'échéance en envoyant des octets isolés.
+                    response.fp.raw._sock.settimeout(remaining)
+                    chunk = response.read1(min(65536, max_bytes + 1 - size))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    size += len(chunk)
+                    if size > max_bytes:
+                        outcome.put(("rest_response_too_large", None))
+                        return
+                body = _decode(b"".join(chunks))
+                result = Response(reply.code, body, size,
+                                  {name.lower(): value for name, value in reply.headers.items()})
+                outcome.put((None, result))
+                return
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError,
+                http.client.HTTPException, RecursionError):
+            pass
+        except Exception:  # noqa: BLE001 — ne jamais exposer une exception du worker
+            outcome.put(("host_unreachable", None))
+            return
+        outcome.put(("host_unreachable", None))
+
+    # L'ouverture et la lecture des en-têtes peuvent elles aussi recevoir des octets
+    # lentement. Le délai de l'appelant reste borné même dans ce cas ; le worker
+    # referme la réponse dès que l'ouverture ou la lecture en cours se termine.
+    threading.Thread(target=fetch, daemon=True).start()
+    try:
+        code, result = outcome.get(timeout=max(0, deadline - time.monotonic()))
+    except queue.Empty:
+        abandoned.set()
+        code, result = "host_unreachable", None
+    if code == "rest_response_too_large":
+        raise RepoError(code, "Réponse REST trop volumineuse.")
+    if code:
+        raise RepoError("host_unreachable", "Hôte REST injoignable.")
+    return result
 
 
 def request(method: str, url: str, *, token: str | None = None, json_body: Any = None,

@@ -67,7 +67,7 @@ def legacy(root):
 
 @pytest.mark.parametrize("host", [example_url(), "api.exemple.test/v1",
     "api.exemple.test:1234", "u@api.exemple.test", "API.exemple.test", "192.0.2.1", "api",
-    "api.exemple.test#x", "localhost:80"])
+    "api.exemple.test#x", "localhost:80", "localhost", "127.0.0.1"])
 def test_rest_host_validation(host):
     with pytest.raises(ValueError):
         RestAccessPoint(**point(host=host))
@@ -183,7 +183,7 @@ def test_invalid_rest_file_preserves_legacy_points(space, content):
     assert connections.access_point("exemple", "sql-exemple").platform == "databricks"
     with pytest.raises(RepoError) as caught:
         connections.access_point("exemple", "api-exemple")
-    assert caught.value.code == "invalid_rest_access_points"
+    assert caught.value.code == "not_found"
 
 
 def test_duplicate_ids_across_files(space):

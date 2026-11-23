@@ -183,7 +183,12 @@ def test_compare_environment_data_applies_to_all_workspaces(
     monkeypatch.setenv("ATLAS_COMPARE_DATA", str(data))
     assert main(ARGS) == 0
     assert not rest_workspace.requests
-    capsys.readouterr()
+    output = capsys.readouterr()
+    assert "ATLAS_COMPARE_DATA" in output.err and "données locales" in output.out.lower()
+    assert main(ARGS + ["--format", "json"]) == 0
+    output = capsys.readouterr()
+    assert "ATLAS_COMPARE_DATA" in output.err
+    assert json.loads(output.out)["data_source"] == "données locales"
 
 
 def test_invalid_rest_file_diagnostic(space, rest_workspace, capsys):
