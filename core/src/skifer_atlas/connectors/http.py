@@ -5,6 +5,7 @@ Aucune requête, réponse ou en-tête n'est journalisé : ils portent des jetons
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.parse
@@ -70,11 +71,11 @@ def get(url: str, *, key: ApiKey, origin: str, timeout=TIMEOUT,
                 raise RepoError("rest_response_too_large", "Réponse REST trop volumineuse.")
             return Response(reply.code, _decode(raw), len(raw),
                             {name.lower(): value for name, value in reply.headers.items()})
-    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError) as error:
-        # Même masquage que les autres connecteurs, mais aucun texte distant n'est restitué.
-        reason = type(getattr(error, "reason", error)).__name__
-        message = mask_secrets(f"Hôte REST injoignable ({reason}).", key.value)
-        raise RepoError("host_unreachable", message) from None
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError,
+            http.client.HTTPException, RecursionError):
+        # Lever hors du gestionnaire pour ne conserver aucun contexte contenant l'URL.
+        pass
+    raise RepoError("host_unreachable", "Hôte REST injoignable.")
 
 
 def request(method: str, url: str, *, token: str | None = None, json_body: Any = None,

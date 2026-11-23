@@ -97,3 +97,34 @@ def test_network_failure_never_includes_url_or_key():
         http.get(target, key=key, origin=server.url, timeout=0.5)
     assert caught.value.code == "host_unreachable"
     assert target not in str(caught.value) and key.value not in str(caught.value)
+
+
+@pytest.mark.parametrize("exception", [
+    __import__("http.client", fromlist=["InvalidURL"]).InvalidURL,
+    __import__("http.client", fromlist=["IncompleteRead"]).IncompleteRead,
+    __import__("http.client", fromlist=["BadStatusLine"]).BadStatusLine,
+    __import__("http.client", fromlist=["LineTooLong"]).LineTooLong,
+    RecursionError,
+])
+def test_get_sanitizes_exception_chain_and_counts_call(space, setup_rest, monkeypatch, capsys, exception):
+    import traceback
+
+    from skifer_atlas.compare.rest_runner import RestRunner
+    from skifer_atlas.connectors.rest_budget import read_usage
+
+    server, _ds, compiled, plan = setup_rest
+
+    def fail(call, **kwargs):
+        raise exception(call.full_url)
+
+    monkeypatch.setattr(http._OPENER, "open", fail)
+    with pytest.raises(RepoError) as caught:
+        RestRunner("exemple")(plan, compiled, threading.Event())
+    error = caught.value
+    assert error.code == "host_unreachable"
+    assert error.__cause__ is None and error.__context__ is None
+    assert server.key not in str(error) + "".join(traceback.format_exception(error))
+    output = capsys.readouterr()
+    assert server.key not in output.out + output.err
+    [usage] = read_usage("exemple", point_id="api-exemple")
+    assert usage["calls"] == 1 and usage["errors"] == 1

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tempfile
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -235,7 +236,7 @@ class RestRunner:
             next_url = _at(body, ds.pagination.next_path) if ds.pagination else None
             if not next_url:
                 return rows, calls, size
-            if not isinstance(next_url, str):
+            if not isinstance(next_url, str) or re.search(r"[\x00-\x20\x7f]", next_url):
                 budget.record(ds.table, errors=1)
                 raise RepoError("rest_next_url_refused", "Adresse de pagination REST refusée.")
             candidate = urljoin(url, next_url)

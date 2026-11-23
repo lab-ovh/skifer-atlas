@@ -381,3 +381,62 @@ def test_invalid_rest_file_only_blocks_rest_preparation(space, real_rest_workspa
         service.prepare_in(space, _request(), "exemple", False)
     assert caught.value.code == "invalid_rest_access_points"
     assert service.prepare_in(space, _request(), "exemple", True).plans
+
+
+@pytest.mark.parametrize("bad", [" ", "\x00", "\n", "\x7f"])
+def test_next_url_control_refused_without_secret(space, setup_rest, capsys, bad):
+    import traceback
+
+    from skifer_atlas.connectors.rest_budget import read_usage
+
+    server, ds, compiled, plan = setup_rest
+    ds.update(rows_path="results", pagination={"kind": "next_url"})
+    save_dataset(space, ds)
+    server.replies = [(200, {"results": server.rows, "next_url": server.url + "/v1/data" + bad + "page2"}, {})]
+    with pytest.raises(RepoError) as caught:
+        RestRunner("exemple")(plan, compiled, threading.Event())
+    error = caught.value
+    assert error.code == "rest_next_url_refused"
+    assert error.__cause__ is None and error.__context__ is None
+    assert server.key not in str(error) + "".join(traceback.format_exception(error))
+    output = capsys.readouterr()
+    assert server.key not in output.out + output.err
+    [usage] = read_usage("exemple", point_id="api-exemple")
+    assert usage["calls"] == 1 and usage["errors"] == 1 and len(server.requests) == 1
+
+
+def test_rebound_perimeter_uses_physical_column(space, real_rest_workspace):
+    from skifer_atlas.compare import service
+    from skifer_atlas.compare.orchestrate import CompareRequest
+
+    server = real_rest_workspace
+    path = space / "kpis/cours-total.yaml"
+    kpi = yaml.safe_load(path.read_text())
+    source = kpi["graph"]["nodes"][0]
+    source.update(concept="titre", binding={"symbol": "symbol"})
+    path.write_text(yaml.safe_dump(kpi))
+    concepts = space / "concepts"
+    concepts.mkdir()
+    (concepts / "titre.yaml").write_text(yaml.safe_dump({"schema_version": 1, "kind": "concept",
+        "data_product": {"id": "titre", "version": 1, "owner": "exemple.owner", "domain": "finance"},
+        "label": "Titre", "entity": {"key": ["symbol"], "attributes": [{"name": "symbol", "type": "string"}]}}))
+    nodes = kpi["graph"]["nodes"]
+    physical_source = dict(source, columns=[dict(c, name="ticker") if c["name"] == "symbol" else c
+                                             for c in source["columns"]], binding={"ticker": "symbol"})
+    variant_path = space / "variants/cours-total/exemple.yaml"
+    variant = yaml.safe_load(variant_path.read_text())
+    variant.pop("overrides")
+    variant.update(mode="from_scratch", concepts=["titre"], graph={"nodes": [physical_source, nodes[1],
+        dict(nodes[2], group_by=["day", "ticker"])], "output": "n03"})
+    variant_path.write_text(yaml.safe_dump(variant))
+    ds_path = space / "rest_datasets.yaml"
+    ds = yaml.safe_load(ds_path.read_text())["datasets"][0]
+    ds["columns"] = [dict(c, name="ticker") if c["name"] == "symbol" else c for c in ds["columns"]]
+    ds["perimeter"] = {"param": "symbol", "column": "ticker", "required": True}
+    save_dataset(space, ds)
+    request = CompareRequest(kpi_id="cours-total", variants=["exemple"], scope={
+        "period": {"from": "2026-01-01", "to": "2026-01-31"}, "perimeter": ["symbol:in:EX,OTHER"]})
+    plan = service.prepare_in(space, request, "exemple", False).plans[0]
+    assert plan.canonical.compiled.sources[0].perimeter == ("ticker:in:EX,OTHER",)
+    RestRunner("exemple")(plan, plan.canonical.compiled, threading.Event())
+    assert [r[1].get("symbol") for r in server.requests] == [["EX"], ["OTHER"]]

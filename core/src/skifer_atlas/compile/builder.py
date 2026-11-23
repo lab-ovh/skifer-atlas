@@ -316,9 +316,14 @@ class _Unit:
     def _source(self, node: Any) -> exp.Select:
         # Source rebranchée (plan 0009) : colonne du graphe → colonne de la table.
         physical = self.builder.renames.get(node.id, {}) if not self.prefix else {}
+        conditions = perimeter_filters(self.view, self.scope).get(node.id, ())
+        perimeter = []
+        for condition in conditions:
+            column, rest = condition.split(":", 1)
+            perimeter.append(f"{physical.get(column, column)}:{rest}")
         source = SourceTable(node.table, tuple(
             (physical.get(c.name, c.name), None if c.type == TODO else c.type)
-            for c in node.columns), tuple(perimeter_filters(self.view, self.scope).get(node.id, ())))
+            for c in node.columns), tuple(perimeter))
         previous = self.builder.sources.setdefault(node.table, source)
         if previous.perimeter != source.perimeter:
             self.builder.sources[node.table] = replace(previous, perimeter_conflict=True)
